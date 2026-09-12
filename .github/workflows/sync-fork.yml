@@ -1,0 +1,32 @@
+name: Sync fork with upstream
+
+on:
+  schedule:
+    - cron: '40 23 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync main branch with upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/Helenvin/LitePan.git" repo
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/Ponphil/LitePan.git
+          git fetch upstream main
+          if git merge-base --is-ancestor upstream/main main; then
+            echo "Already up to date"
+            exit 0
+          fi
+          git merge upstream/main --no-edit || { echo "Merge conflict, skipping this round"; exit 0; }
+          git push origin main
+          echo "Synced with upstream"
