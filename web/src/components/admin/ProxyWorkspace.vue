@@ -5,6 +5,7 @@ import AppButton from "@/components/base/AppButton.vue";
 import AppModal from "@/components/base/AppModal.vue";
 import AppSelect from "@/components/base/AppSelect.vue";
 import SettingsHelpTooltip from "@/components/admin/SettingsHelpTooltip.vue";
+import SettingsSegment from "@/components/admin/SettingsSegment.vue";
 
 export interface ProxyFieldOption {
   value: string;
@@ -19,7 +20,7 @@ export interface ProxyField {
   helpTitle?: string;
   helpBody?: string;
   placeholder?: string;
-  type?: "text" | "password" | "select" | "switch" | "segmented-text";
+  type?: "text" | "password" | "select" | "switch" | "segment" | "segmented-text";
   inputmode?: "text" | "numeric";
   options?: ProxyFieldOption[];
   segmentKey?: string;
@@ -48,6 +49,8 @@ withDefaults(
     icon: string;
     subtitle: string;
     items: ProxyWorkspaceItem[];
+    itemToggleable?: boolean;
+    itemToggleDisabled?: boolean;
     selectedId: string;
     fields: ProxyField[];
     namePlaceholder?: string;
@@ -93,6 +96,8 @@ withDefaults(
     removeLabel: "删除配置",
     deletable: true,
     addable: true,
+    itemToggleable: false,
+    itemToggleDisabled: false,
   },
 );
 
@@ -105,6 +110,7 @@ const emit = defineEmits<{
   copy: [];
   save: [];
   cancel: [];
+  toggleItem: [id: string, checked: boolean];
 }>();
 
 const form = defineModel<Record<string, string>>({ required: true });
@@ -148,7 +154,7 @@ function cancelName() {
     <div class="ws">
       <!-- 左侧配置列表 -->
         <aside class="ws-side">
-          <div class="ws-side__cap">{{ caption }}</div>
+          <div v-if="caption" class="ws-side__cap">{{ caption }}</div>
           <div class="ws-side__list">
             <div
               v-for="item in items"
@@ -162,7 +168,17 @@ function cancelName() {
                 <b>{{ item.id === selectedId ? currentName : item.name }}</b>
                 <small>{{ itemSubtitle(item) }}</small>
               </span>
-              <span class="ws-side__st" :class="{ on: item.running }" />
+              <input
+                v-if="itemToggleable"
+                class="ws-side__check"
+                type="checkbox"
+                :checked="item.running"
+                :disabled="itemToggleDisabled"
+                :aria-label="`${item.running ? '取消监控' : '监控'}${item.name}`"
+                @click.stop
+                @change="emit('toggleItem', item.id, ($event.target as HTMLInputElement).checked)"
+              />
+              <span v-else class="ws-side__st" :class="{ on: item.running }" />
             </div>
             <div v-if="!items.length" class="ws-side__empty">还没有配置<br>点下方「添加配置」新建</div>
           </div>
@@ -213,6 +229,13 @@ function cancelName() {
             <AppSelect
               v-if="field.type === 'select'"
               v-model="form[field.key]"
+              :options="field.options || []"
+            />
+
+            <SettingsSegment
+              v-else-if="field.type === 'segment'"
+              v-model="form[field.key]"
+              :label="field.label"
               :options="field.options || []"
             />
 
@@ -278,6 +301,8 @@ function cancelName() {
               <button type="button" class="ws-entry__copy" :disabled="!entryRunning" @click="emit('copy')">复制</button>
             </div>
           </div>
+
+          <slot name="main-extra" />
 
           <div class="ws-foot">
             <AppButton v-if="showTest" variant="secondary" :disabled="testing" @click="emit('test')">{{ testing ? "测试中…" : "测试连接" }}</AppButton>
@@ -378,6 +403,19 @@ function cancelName() {
 }
 .ws-side__st.on {
   background: var(--success);
+}
+
+.ws-side__check {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.ws-side__check:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .ws-side__empty {
   padding: 26px 10px;

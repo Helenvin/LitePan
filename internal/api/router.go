@@ -47,6 +47,7 @@ import (
 	"litepan/internal/share/dav"
 	"litepan/internal/spacecleanup"
 	"litepan/internal/strm"
+	"litepan/internal/strmdelete"
 	"litepan/internal/strmscrape"
 	"litepan/internal/upload"
 )
@@ -70,6 +71,7 @@ type Deps struct {
 	OfflineDownloads  *offlinedownload.Service
 	Playback          *playback.Service
 	Strm              *strm.Service
+	StrmDelete        *strmdelete.Service
 	CacheRetention    *cacheretention.Service
 	MediaOrganize     *mediaorganize.Service
 	AIOrganize        *aiorganize.Service
@@ -111,6 +113,7 @@ type Handler struct {
 	offlineDownloads  *offlinedownload.Service
 	playback          *playback.Service
 	strm              *strm.Service
+	strmDelete        *strmdelete.Service
 	cacheRetention    *cacheretention.Service
 	mediaOrganize     *mediaorganize.Service
 	aiOrganize        *aiorganize.Service
@@ -161,6 +164,7 @@ func NewRouter(d Deps) http.Handler {
 		offlineDownloads:  d.OfflineDownloads,
 		playback:          d.Playback,
 		strm:              d.Strm,
+		strmDelete:        d.StrmDelete,
 		cacheRetention:    d.CacheRetention,
 		mediaOrganize:     d.MediaOrganize,
 		aiOrganize:        d.AIOrganize,
@@ -335,6 +339,12 @@ func NewRouter(d Deps) http.Handler {
 					r.Get("/status", h.get115StrmToolStatus)
 					r.Post("/enabled", h.set115StrmToolEnabled)
 					r.Post("/cache/clear", h.clear115StrmDirCache)
+				})
+				r.Route("/tools/strm-delete", func(r chi.Router) {
+					r.Get("/config", h.getStrmDeleteTool)
+					r.Put("/config", h.updateStrmDeleteTool)
+					r.Post("/pending/{id}/confirm", h.confirmStrmDelete)
+					r.Post("/pending/{id}/cancel", h.cancelStrmDelete)
 				})
 				r.Route("/tools/local-upload", func(r chi.Router) {
 					r.Get("/config", h.getLocalUploadConfig)
