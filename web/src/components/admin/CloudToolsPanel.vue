@@ -34,25 +34,28 @@ function matches(title: string) {
   return containsQuery(title, searchQuery.value);
 }
 
-const hasMatch = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase();
-  return !q || cardTitles.some((t) => t.toLowerCase().includes(q));
-});
+const activeQuery = computed(() => searchQuery.value.trim());
+const hasMatch = computed(() => !activeQuery.value || cardTitles.some((title) => matches(title)));
 
+/** 收搜索框：只收框，保留筛选结果；再点一次「搜索工具」可以改搜索词或清空筛选 */
 function closeSearch() {
+  emit("update:searchOpen", false);
+}
+
+/** 清筛选：清空搜索词并收起搜索框（切标签页、离开页面时由父组件调用） */
+function clearSearch() {
   searchQuery.value = "";
   emit("update:searchOpen", false);
 }
 
+defineExpose({ clearSearch });
+
 watch(
   () => props.searchOpen,
   async (open) => {
-    if (open) {
-      await nextTick();
-      searchInputRef.value?.focus();
-    } else {
-      searchQuery.value = "";
-    }
+    if (!open) return;
+    await nextTick();
+    searchInputRef.value?.focus();
   },
 );
 
@@ -122,6 +125,7 @@ async function clearCache() {
         <button type="button" aria-label="关闭搜索" @click="closeSearch"><SvgIcon name="xmark" :size="14" /></button>
       </div>
     </div>
+    <!-- 搜索框收起后筛选仍然生效（离开本页或刷新即失效），这里不再提示 -->
     <div class="cloud-tools__grid">
       <ProxyToolsPanel :search-query="searchQuery" />
       <ToolCard
@@ -179,11 +183,14 @@ async function clearCache() {
 
       <StrmDeleteToolCard :search-query="searchQuery" />
     </div>
-    <div v-if="searchOpen && !hasMatch" class="tool-search__empty">没有找到相关工具</div>
+    <!-- 收起搜索框后筛选仍然生效，所以「没搜到」的提示不能只在搜索框打开时显示 -->
+    <div v-if="!hasMatch" class="tool-search__empty">没有找到相关工具</div>
   </div>
 </template>
 
 <style scoped>
+/* 搜索展开时整页压暗（含卡片），点任意处收起搜索框；
+   收起后筛选依然生效，所以再点卡片就能直接操作。 */
 .tool-search__mask {
   position: fixed;
   inset: 0;
