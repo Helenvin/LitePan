@@ -358,7 +358,7 @@ func TestWriteOptionalArtworkSkipsDownloadFailure(t *testing.T) {
 	svc := &Service{log: slog.New(slog.NewTextHandler(&logs, nil))}
 	out := filepath.Join(t.TempDir(), "episode-thumb.jpg")
 
-	written, err := svc.writeOptionalArtwork(context.Background(), stubImageDownloader{err: fmt.Errorf("图片 404")}, "/missing.jpg", out, "S01E275 缩略图")
+	written, err := svc.writeOptionalArtwork(context.Background(), stubImageDownloader{err: fmt.Errorf("图片 404")}, "/missing.jpg", "w500", out, "S01E275 缩略图")
 	if err != nil {
 		t.Fatalf("可选图片下载失败不应中断刮削，err=%v", err)
 	}
@@ -380,7 +380,7 @@ func TestWriteOptionalArtworkPreservesWriteFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := &Service{}
-	_, err := svc.writeOptionalArtwork(context.Background(), stubImageDownloader{data: []byte("image")}, "/ok.jpg", filepath.Join(notDir, "thumb.jpg"), "S01E275 缩略图")
+	_, err := svc.writeOptionalArtwork(context.Background(), stubImageDownloader{data: []byte("image")}, "/ok.jpg", "w500", filepath.Join(notDir, "thumb.jpg"), "S01E275 缩略图")
 	if err == nil || !strings.Contains(err.Error(), "写入S01E275 缩略图") {
 		t.Fatalf("本地写入失败必须保留，err=%v", err)
 	}
@@ -390,7 +390,7 @@ func TestWriteOptionalArtworkPreservesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	svc := &Service{}
-	_, err := svc.writeOptionalArtwork(ctx, stubImageDownloader{err: fmt.Errorf("请求失败")}, "/cancel.jpg", filepath.Join(t.TempDir(), "thumb.jpg"), "S01E275 缩略图")
+	_, err := svc.writeOptionalArtwork(ctx, stubImageDownloader{err: fmt.Errorf("请求失败")}, "/cancel.jpg", "w500", filepath.Join(t.TempDir(), "thumb.jpg"), "S01E275 缩略图")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("任务取消不能被降级为警告，err=%v", err)
 	}

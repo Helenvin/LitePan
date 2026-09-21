@@ -37,8 +37,8 @@ type tmdbImageDownloader interface {
 }
 
 // writeOptionalArtwork 将图片下载故障降为警告，但保留取消和本地写入错误。
-func (s *Service) writeOptionalArtwork(ctx context.Context, client tmdbImageDownloader, imagePath, outputPath, label string) (bool, error) {
-	data, err := client.DownloadImage(ctx, imagePath, "w500")
+func (s *Service) writeOptionalArtwork(ctx context.Context, client tmdbImageDownloader, imagePath, size, outputPath, label string) (bool, error) {
+	data, err := client.DownloadImage(ctx, imagePath, size)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return false, ctxErr
@@ -145,7 +145,7 @@ func (s *Service) writeTVExtras(ctx context.Context, client *tmdb.Client, g work
 			}
 			seasonPoster := filepath.Join(seasonDir, "poster.jpg")
 			if (overwrite || !fileExists(seasonPoster)) && detail.PosterPath != "" {
-				if _, err := s.writeOptionalArtwork(ctx, client, detail.PosterPath, seasonPoster, fmt.Sprintf("第 %d 季目录海报", season)); err != nil {
+				if _, err := s.writeOptionalArtwork(ctx, client, detail.PosterPath, "original", seasonPoster, fmt.Sprintf("第 %d 季目录海报", season)); err != nil {
 					return err
 				}
 			}
@@ -173,7 +173,7 @@ func (s *Service) writeTVExtras(ctx context.Context, client *tmdb.Client, g work
 			}
 			thumb := stem + "-thumb.jpg"
 			if (overwrite || !fileExists(thumb)) && ep.StillPath != "" {
-				if _, err := s.writeOptionalArtwork(ctx, client, ep.StillPath, thumb, fmt.Sprintf("S%02dE%02d 缩略图", season, ep.EpisodeNumber)); err != nil {
+				if _, err := s.writeOptionalArtwork(ctx, client, ep.StillPath, "w500", thumb, fmt.Sprintf("S%02dE%02d 缩略图", season, ep.EpisodeNumber)); err != nil {
 					return err
 				}
 				time.Sleep(interval)
