@@ -22,7 +22,7 @@ func (m *Manager) persistTask(st *taskState) error {
 	defer cancel()
 	err := m.repo.Upsert(ctx, rec)
 	if err != nil && m.log != nil {
-		m.log.Warn("upload task persist failed", "task_id", rec.TaskID, "err", err)
+		m.log.Warn("上传任务落库失败", "task_id", rec.TaskID, "err", err)
 	}
 	return err
 }
@@ -34,7 +34,7 @@ func (m *Manager) deletePersisted(taskID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := m.repo.Delete(ctx, taskID); err != nil && m.log != nil {
-		m.log.Warn("upload task delete persist failed", "task_id", taskID, "err", err)
+		m.log.Warn("上传任务删除落库失败", "task_id", taskID, "err", err)
 	}
 }
 
@@ -48,7 +48,7 @@ func (m *Manager) restoreTasks() {
 	cancel()
 	if err != nil {
 		if m.log != nil {
-			m.log.Warn("upload task restore failed", "err", err)
+			m.log.Warn("上传任务恢复失败", "err", err)
 		}
 		return
 	}

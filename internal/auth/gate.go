@@ -50,7 +50,7 @@ func (g *Gate) HandlePassiveError(ctx context.Context, accountID int64) error {
 	return domain.Errf(domain.CodeAuthExpired)
 }
 
-// 重试后仍认证失败，不能继续把账号视为正常；并发失败只登记首个。
+// HandleRetryFailure 重试后仍认证失败，将账号标记为异常；并发失败只登记首个。
 func (g *Gate) HandleRetryFailure(ctx context.Context, accountID int64, cause error) {
 	if g == nil || g.svc == nil || !IsAuthError(cause) {
 		return

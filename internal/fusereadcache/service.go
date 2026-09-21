@@ -5,14 +5,18 @@ import (
 	"io"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"litepan/internal/settings"
 )
 
 type Service struct {
-	settings *settings.Service
-	store    *storeLayer
-	mu       sync.Mutex
+	settings       *settings.Service
+	store          *storeLayer
+	mu             sync.Mutex
+	usedBytes      int64
+	usageKnown     bool
+	lastMaintainAt time.Time
 }
 
 type Options struct {
@@ -99,7 +103,7 @@ func (s *Service) ReadAt(ctx context.Context, accountID int64, fileID string, de
 		n, ok, err := s.store.loadBlockRange(accountID, fileID, blockIdx, blockOff, blockDest)
 		s.mu.Unlock()
 		if err != nil && err != io.EOF {
-			return written, err
+			ok = false
 		}
 		if ok {
 			written += n
@@ -119,12 +123,6 @@ func (s *Service) ReadAt(ctx context.Context, accountID int64, fileID string, de
 			return 0, err
 		}
 		chunk := buf[:n]
-		s.mu.Lock()
-		putErr := s.putBlockWithPolicy(ctx, accountID, fileID, blockIdx, chunk)
-		s.mu.Unlock()
-		if putErr != nil {
-			return written, putErr
-		}
 		if int64(len(chunk)) <= blockOff {
 			if err == io.EOF {
 				return written, nil
@@ -137,6 +135,9 @@ func (s *Service) ReadAt(ctx context.Context, accountID int64, fileID string, de
 		}
 		copied := copy(dest[written:], chunk[blockOff:blockOff+need])
 		written += copied
+		s.mu.Lock()
+		_ = s.putBlockWithPolicy(ctx, accountID, fileID, blockIdx, chunk)
+		s.mu.Unlock()
 		if err == io.EOF || copied == 0 {
 			return written, err
 		}
@@ -150,7 +151,11 @@ func (s *Service) InvalidateFile(_ context.Context, accountID int64, fileID stri
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.store.invalidateFile(accountID, fileID)
+	err := s.store.invalidateFile(accountID, fileID)
+	if err == nil {
+		s.usageKnown = false
+	}
+	return err
 }
 
 func (s *Service) InvalidateAccount(_ context.Context, accountID int64) error {
@@ -159,7 +164,11 @@ func (s *Service) InvalidateAccount(_ context.Context, accountID int64) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.store.invalidateAccount(accountID)
+	err := s.store.invalidateAccount(accountID)
+	if err == nil {
+		s.usageKnown = false
+	}
+	return err
 }
 
 func (s *Service) ClearAll(_ context.Context) error {
@@ -168,7 +177,13 @@ func (s *Service) ClearAll(_ context.Context) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.store.clearAll()
+	err := s.store.clearAll()
+	if err == nil {
+		s.usedBytes = 0
+		s.usageKnown = true
+		s.lastMaintainAt = time.Now()
+	}
+	return err
 }
 
 func (s *Service) UpdateSettings(ctx context.Context, patch map[string]string) error {

@@ -21,7 +21,6 @@ import {
   deleteStrmBranch,
   deleteStrmTask,
   fetchStrmBranches,
-  fetchStrmSettings,
   fetchStrmStartupRemaining,
   fetchStrmTasks,
   forceStopStrmTask,
@@ -301,6 +300,7 @@ const enabledCount = computed(() => tasks.value.filter((t) => isStrmTaskEnabled(
 const errorCount = computed(() => tasks.value.filter((t) => t.status === "error").length);
 
 const strmSettingsSummary = ref<StrmSettings | null>(null);
+const strmSettingsSummaryLoading = ref(false);
 const {
   scanningCount: strmScanningCount,
   scanSuccessRate: strmScanSuccessRate,
@@ -308,18 +308,6 @@ const {
   nextRunAt: strmNextRunAt,
   nextRunTask: strmNextRunTask,
 } = useStrmScanPlan(tasks);
-const strmSettingsSummaryLoading = ref(false);
-
-async function loadStrmSettingsSummary() {
-  strmSettingsSummaryLoading.value = true;
-  try {
-    strmSettingsSummary.value = await fetchStrmSettings();
-  } catch {
-    // 摘要失败不影响任务列表，保留占位符即可。
-  } finally {
-    strmSettingsSummaryLoading.value = false;
-  }
-}
 
 // 目录整理页仪表带的统计与产出，由 MediaOrganizePanel 上报。
 const organizeTaskStats = ref({
@@ -626,7 +614,7 @@ async function loadStartupRemaining() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadTasks(), accountsStore.loadAccounts(), loadStrmSettingsSummary()]);
+  await Promise.all([loadTasks(), accountsStore.loadAccounts()]);
 }
 
 function resetForm() {
@@ -776,20 +764,7 @@ async function runStrmRepairCheck() {
   }
 }
 
-async function skipStrmRepairAndCreate() {
-  const body = pendingCreateBody.value;
-  if (!body) return;
-  submitting.value = true;
-  try {
-    await finishCreateTask(body);
-  } catch (e) {
-    toast.error(getApiErrorMessage(e, "创建任务失败"));
-  } finally {
-    submitting.value = false;
-  }
-}
-
-async function confirmAfterStrmRepair() {
+async function finishPendingTaskCreate() {
   const body = pendingCreateBody.value;
   if (!body) return;
   submitting.value = true;
@@ -985,7 +960,7 @@ function closeBranchDialog() {
   resetBranchForm();
 }
 
-async function onBranchFolderPicked(payload: { accountId: number; parentId: string; path: string }) {
+async function onBranchFolderPicked(payload: { accountId: number; parentId: string; path: string; dirs?: string[] }) {
   if (!branchTask.value?.id) return;
   const taskPath = (branchTask.value.path || "/").replace(/\/+$/, "") || "/";
   const picked = (payload.path || "/").replace(/\/+$/, "") || "/";
@@ -1001,6 +976,7 @@ async function onBranchFolderPicked(payload: { accountId: number; parentId: stri
       account_id: branchTask.value.account_id,
       parent_id: payload.parentId,
       path: picked,
+      relative_dirs: payload.dirs ?? [],
       branch_type: branchType,
       recursive: branchType === "temporary",
       retention_days: branchType === "temporary" ? 30 : 0,
@@ -1319,7 +1295,12 @@ watch(activeTab, (tab) => {
       @cancel="closeSettingsDrawer"
       @save="handleDrawerSave"
     >
-      <StrmSettingsPanel v-show="drawerKind === 'strm'" ref="strmSettingsRef" />
+      <StrmSettingsPanel
+        v-show="drawerKind === 'strm'"
+        ref="strmSettingsRef"
+        @updated="strmSettingsSummary = $event"
+        @loading="strmSettingsSummaryLoading = $event"
+      />
       <CacheSettingsPanel v-if="drawerKindsVisited.cache" v-show="drawerKind === 'cache'" ref="cacheSettingsRef" />
       <MediaOrganizeSettings v-if="drawerKindsVisited.organize" v-show="drawerKind === 'organize'" ref="organizeSettingsRef" />
     </AdminSettingsDrawer>
@@ -1446,7 +1427,7 @@ watch(activeTab, (tab) => {
               输出目录「{{ pendingCreateBody?.output_folder }}」已存在，是否检测与当前账号能否关联？
             </p>
             <div class="strm-repair-panel__actions">
-              <AppButton type="button" variant="secondary" :disabled="submitting" @click="skipStrmRepairAndCreate">
+              <AppButton type="button" variant="secondary" :disabled="submitting" @click="finishPendingTaskCreate">
                 忽略，直接创建
               </AppButton>
               <AppButton type="button" variant="primary" @click="runStrmRepairCheck">检测，尝试关联</AppButton>
@@ -1470,7 +1451,7 @@ watch(activeTab, (tab) => {
                 type="button"
                 variant="primary"
                 :disabled="submitting"
-                @click="confirmAfterStrmRepair"
+                @click="finishPendingTaskCreate"
               >
                 {{ submitting ? "处理中…" : strmRepairResult?.ok ? "确定" : "仍要创建" }}
               </AppButton>
@@ -1621,26 +1602,12 @@ watch(activeTab, (tab) => {
   padding-bottom: 24px;
 }
 
-.strm-task-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.cache-task-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
+.strm-task-panel,
+.cache-task-panel,
 .organize-task-panel {
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.strm-task-panel :deep(.admin-stats-grid) {
-  margin-bottom: 0;
 }
 
 .strm-task-table-wrap {

@@ -19,13 +19,11 @@ import (
 )
 
 const (
-	// scanLifetime 仅作为扫描“新鲜期”信息（expires_at 字段），不再用于自动删除报告：
-	// 报告一直保留，直到重新扫描覆盖、清理执行消费、或程序重启。
+	// scanLifetime 只作为扫描新鲜期信息（expires_at），报告一直保留到重新扫描覆盖或程序重启。
 	scanLifetime     = 15 * time.Minute
 	maxScanPlans     = 8
 	backupTempMinAge = time.Hour
-	// coverExtractTempMinAge 封面提取临时文件（保存上传中转 / ffmpeg 下载中转）视为残留的年龄阈值。
-	// 正常流程这些文件随用随删，超过 1 小时未被引用即视为异常中断残留。
+	// coverExtractTempMinAge 封面提取临时文件超过 1 小时未清理即视为异常中断残留。
 	coverExtractTempMinAge = time.Hour
 )
 
@@ -151,7 +149,6 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 		}
 	}
 
-	sortItems(items)
 	scanID := uuid.NewString()
 	plan := scanPlan{createdAt: now, expiresAt: now.Add(scanLifetime), items: make(map[string]planItem, len(items))}
 	for _, item := range items {
@@ -282,16 +279,14 @@ func (s *Service) scanScrapeIndexes(tasks []*domain.StrmTask) ([]planItem, error
 	return out, nil
 }
 
-// LatestReport 返回最近一次未过期的扫描报告；没有任何有效扫描时 ok=false。
-// 前端页面刷新后用它恢复卡片状态，避免回到“等待体检”。
+// LatestReport 返回最近一次扫描报告，没有任何扫描时 ok=false，供前端刷新后恢复卡片状态。
 func (s *Service) LatestReport() (Report, bool) {
 	if s == nil {
 		return Report{}, false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// 报告不自动过期：返回最近一次扫描（含已过“新鲜期”的），
-	// 直到重新扫描覆盖、清理执行消费、或程序重启。
+	// 报告不自动过期，返回最近一次扫描，直到重新扫描覆盖或程序重启。
 	var bestID string
 	var bestCreated time.Time
 	var bestPlan scanPlan

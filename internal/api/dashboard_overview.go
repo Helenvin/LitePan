@@ -37,8 +37,7 @@ type dashboardOverviewDTO struct {
 	LogStats            logx.Stats             `json:"log_stats"`
 }
 
-// degradeOverviewSection 概况单个分块加载失败时记警告并保持该块为空数据，
-// 避免某一块故障把整个仪表盘拖成 500，与旧版前端局部降级行为对齐。
+// degradeOverviewSection 单个分块失败时记警告并保留空数据，避免整个仪表盘变成 500。
 func degradeOverviewSection(ctx context.Context, section string, err error) {
 	if err == nil {
 		return
@@ -112,7 +111,7 @@ func (h *Handler) dashboardOverview(w http.ResponseWriter, r *http.Request) {
 		for _, task := range tasks {
 			items = append(items, strmTaskDTO{
 				Status: task.Status, GeneratedCount: task.GeneratedCount,
-				LastScan: formatTimeUnlessZero(task.LastScan),
+				LastScan: FormatAPITime(task.LastScan),
 			})
 		}
 		out.StrmTasks = items
@@ -135,7 +134,7 @@ func (h *Handler) dashboardOverview(w http.ResponseWriter, r *http.Request) {
 			}
 			items = append(items, mediaOrganizeTaskDTO{
 				ID: task.ID, TaskName: task.TaskName, Status: task.Status,
-				LastRunAt: formatTimeUnlessZero(task.LastRunAt), LastRunResult: lastResult,
+				LastRunAt: FormatAPITime(task.LastRunAt), LastRunResult: lastResult,
 			})
 		}
 		out.OrganizeTasks = items
@@ -189,12 +188,21 @@ func (h *Handler) dashboardOverview(w http.ResponseWriter, r *http.Request) {
 		if h.settings != nil {
 			ackAt = strings.TrimSpace(h.settings.String(settings.KeyLogErrorAckAt))
 		}
-		out.LogStats = h.logs.Storage().StatsFiltered(logx.LevelInfo, ackAt)
+		// StatsRecent 只读最近两天的日志文件，StatsFiltered 遍历全部历史文件会拖死接口。
+		statsStart := time.Now()
+		out.LogStats = h.logs.Storage().StatsRecent(logx.LevelInfo, ackAt)
+		if elapsed := time.Since(statsStart); elapsed >= slowOverviewStatsThreshold {
+			requestLogger(r.Context()).Warn("仪表盘日志统计耗时过长",
+				"elapsed", elapsed.String(), "total", out.LogStats.Total)
+		}
 	}
 	// 各分块失败已在内部降级，Wait 不会返回错误。
 	group.Wait()
 	writeOK(w, out)
 }
+
+// slowOverviewStatsThreshold 超过该阈值就把日志统计耗时记进日志，用于定位仪表盘请求超时。
+const slowOverviewStatsThreshold = 2 * time.Second
 
 func dashboardAccountConfig(raw string) string {
 	var values map[string]json.RawMessage
@@ -216,11 +224,4 @@ func formatOptionalTime(value *time.Time) string {
 		return ""
 	}
 	return FormatAPITime(*value)
-}
-
-func formatTimeUnlessZero(value time.Time) string {
-	if value.IsZero() {
-		return ""
-	}
-	return FormatAPITime(value)
 }

@@ -2,7 +2,7 @@
 import SvgIcon from "@/components/icons/SvgIcon.vue";
 import type { DropdownMenuItem } from "@/types/menu";
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     items: DropdownMenuItem[];
     density?: "compact" | "comfortable";

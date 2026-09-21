@@ -83,7 +83,7 @@ func (h *Handler) ackRecentErrors(w http.ResponseWriter, r *http.Request) {
 		writeOK(w, logx.Stats{ByLevel: map[string]int{}, ByModule: map[string]int{}})
 		return
 	}
-	latest := strings.TrimSpace(h.logs.Storage().StatsFiltered(logx.LevelInfo, "").LastRecentErrorAt)
+	latest := strings.TrimSpace(h.logs.Storage().StatsRecent(logx.LevelInfo, "").LastRecentErrorAt)
 	if latest == "" {
 		latest = time.Now().Format(time.RFC3339)
 	}

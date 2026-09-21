@@ -3,6 +3,7 @@ package fusereadcache
 import (
 	"context"
 	"io"
+	"os"
 	"testing"
 
 	"litepan/internal/settings"
@@ -10,6 +11,52 @@ import (
 
 type memoryConfigRepo struct {
 	values map[string]string
+}
+
+func TestReadAtFallsBackWhenCacheStorageFails(t *testing.T) {
+	ctx := context.Background()
+	settingSvc, err := settings.New(ctx, &memoryConfigRepo{values: map[string]string{
+		"fuse_read_cache_enabled": "true",
+	}})
+	if err != nil {
+		t.Fatalf("settings.New: %v", err)
+	}
+	svc, err := New(ctx, Options{DataDir: t.TempDir(), Settings: settingSvc})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	if err := os.RemoveAll(svc.store.blocks); err != nil {
+		t.Fatalf("remove cache blocks: %v", err)
+	}
+	if err := os.WriteFile(svc.store.blocks, []byte("不可写入子目录"), 0o644); err != nil {
+		t.Fatalf("break cache blocks: %v", err)
+	}
+
+	want := make([]byte, BlockSize)
+	for i := range want {
+		want[i] = byte(i % 239)
+	}
+	fetchCalls := 0
+	fetch := func(dest []byte, off int64) (int, error) {
+		fetchCalls++
+		return copy(dest, want[off:]), nil
+	}
+
+	got := make([]byte, 128*1024)
+	n, err := svc.ReadAt(ctx, 1, "file", got, 0, fetch)
+	if err != nil || n != len(got) {
+		t.Fatalf("ReadAt = %d, %v", n, err)
+	}
+	if fetchCalls != 1 {
+		t.Fatalf("fetch calls = %d, want 1", fetchCalls)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("data mismatch at %d", i)
+		}
+	}
 }
 
 func (r *memoryConfigRepo) Get(_ context.Context, key string) (string, bool, error) {

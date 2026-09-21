@@ -345,9 +345,8 @@ func (p *Planner) planGroupWithMatch(
 		mode := "move"
 		if isRename {
 			mode = "rename"
-			srcDirName := p.scannedDirNames[entry.sourceDirID]
 			needsTVSeasonPlacement := p.tvFileNeedsSeasonFolderPlacement(key, entry)
-			isScattered := entry.sourceDirID == p.parentID || rules.IsGenericMediaDir(srcDirName)
+			isScattered := p.renameNeedsWorkFolder(entry)
 			if needsTVSeasonPlacement {
 				workDirRef := p.renameWorkDirRefForSeasonPlacement(key, entry, newFolderName)
 				targetParent, deps = p.resolveTargetParentForMove(workDirRef, isTV, currentSeason, seasonDirCache)
@@ -496,7 +495,22 @@ func (p *Planner) renameEntryNeedsPlacement(key groupKey, entry batchEntry) bool
 	if key.mediaKind != "movie" {
 		return false
 	}
-	return entry.sourceDirID == p.parentID || rules.IsGenericMediaDir(entry.sourceDirName)
+	return p.renameNeedsWorkFolder(entry)
+}
+
+// renameNeedsWorkFolder 判断 rename 模式下是否要先建好作品文件夹、再把文件放进去。
+// 散落在扫描根目录、通用媒体目录（电影/Movie）以及合集容器目录
+// （XX合集/XX系列/XX大全…）里的文件都算：直接原地改名不符合刮削结构，
+// 播放器/刮削器会把这些文件当成同一部作品。
+func (p *Planner) renameNeedsWorkFolder(entry batchEntry) bool {
+	if entry.sourceDirID == p.parentID {
+		return true
+	}
+	name := entry.sourceDirName
+	if name == "" {
+		name = p.scannedDirNames[entry.sourceDirID]
+	}
+	return rules.IsGenericMediaDir(name) || rules.IsCollectionContainerDir(name)
 }
 
 func (p *Planner) renameWorkDirRefForSeasonPlacement(key groupKey, entry batchEntry, newFolderName string) string {

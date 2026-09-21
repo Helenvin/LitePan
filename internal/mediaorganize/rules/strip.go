@@ -1,6 +1,9 @@
 package rules
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 func PreprocessDottedFilename(name string) string {
 	if strings.Count(name, ".") < 2 {
@@ -45,8 +48,7 @@ func StripReleaseSitePrefix(name string) string {
 	return raw
 }
 
-// StripChineseBracketTags 剥掉含中文关键词的方括号/中文括号标签（如 [全10集] [内封简英字幕] 【广告】），
-// 保留纯数字/字母的方括号（如 [2160p] [01]）。
+// StripChineseBracketTags 剥掉含中文关键词的方括号标签，保留纯数字/字母方括号。
 func StripChineseBracketTags(name string) string {
 	if name == "" {
 		return name
@@ -83,23 +85,21 @@ func StripReleaseGroupFromTitle(title string) string {
 	if raw == "" {
 		return raw
 	}
-	if m := releaseGroupTailRe.FindStringSubmatch(raw); len(m) >= 3 {
-		if isKnownReleaseGroup(m[2]) {
-			out := trimChars(m[1], " ._-")
-			if out != "" {
-				return out
-			}
-		}
-	}
-	if m := releaseGroupDashRe.FindStringSubmatch(raw); len(m) >= 3 {
-		if isKnownReleaseGroup(m[2]) {
-			out := trimChars(m[1], " ._-")
-			if out != "" {
-				return out
-			}
-		}
+	if out, ok := stripKnownGroupTail(raw); ok {
+		return out
 	}
 	return raw
+}
+
+func stripKnownGroupTail(raw string) (string, bool) {
+	for _, pattern := range []*regexp.Regexp{releaseGroupTailRe, releaseGroupDashRe} {
+		if m := pattern.FindStringSubmatch(raw); len(m) >= 3 && isKnownReleaseGroup(m[2]) {
+			if out := trimChars(m[1], " ._-"); out != "" {
+				return out, true
+			}
+		}
+	}
+	return "", false
 }
 
 func StripReleaseGroupFromStem(stem string, parsed ParsedMedia) string {
@@ -115,21 +115,8 @@ func StripReleaseGroupFromStem(stem string, parsed ParsedMedia) string {
 			}
 		}
 	}
-	if m := releaseGroupTailRe.FindStringSubmatch(raw); len(m) >= 3 {
-		if isKnownReleaseGroup(m[2]) {
-			out := trimChars(m[1], "._- ")
-			if out != "" {
-				return out
-			}
-		}
-	}
-	if m := releaseGroupDashRe.FindStringSubmatch(raw); len(m) >= 3 {
-		if isKnownReleaseGroup(m[2]) {
-			out := trimChars(m[1], "._- ")
-			if out != "" {
-				return out
-			}
-		}
+	if out, ok := stripKnownGroupTail(raw); ok {
+		return out
 	}
 	if m := releaseGroupGenericRe.FindStringSubmatch(raw); len(m) >= 3 {
 		tail := m[2]

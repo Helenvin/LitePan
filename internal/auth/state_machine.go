@@ -62,7 +62,7 @@ func (s *Service) markSuccess(ctx context.Context, accountID int64, st *domain.A
 		st.LastRefreshAt = s.now()
 	}
 	if err := s.authStates.Upsert(ctx, st); err != nil {
-		s.log.Warn("auth mark success", "account", accountID, "err", err)
+		s.log.Warn("写入认证成功态失败", "account", accountID, "err", err)
 		return err
 	}
 	if notifyRecovered {
@@ -139,7 +139,7 @@ func (s *Service) handleFailure(ctx context.Context, accountID int64, st *domain
 	}
 	st.LastFailureKind = kind
 	if err := s.authStates.Upsert(ctx, st); err != nil {
-		s.log.Warn("auth handle failure", "account", accountID, "err", err)
+		s.log.Warn("写入认证失败态失败", "account", accountID, "err", err)
 	}
 	s.wake()
 }
@@ -151,7 +151,7 @@ func (s *Service) toTokenExpired(ctx context.Context, accountID int64, st *domai
 	st.LastFailureKind = domain.AuthFailureAuth
 	st.NextRetryAt = s.now().Add(failedRetryCooldown)
 	if err := s.authStates.Upsert(ctx, st); err != nil {
-		s.log.Warn("auth token expired", "account", accountID, "err", err)
+		s.log.Warn("写入 Token 过期态失败", "account", accountID, "err", err)
 	}
 	if changed {
 		s.publishFailed(ctx, accountID, msg, true)
@@ -166,7 +166,7 @@ func (s *Service) toFailed(ctx context.Context, accountID int64, st *domain.Auth
 	st.LastFailureKind = domain.AuthFailureAuth
 	st.NextRetryAt = s.now().Add(failedRetryCooldown)
 	if err := s.authStates.Upsert(ctx, st); err != nil {
-		s.log.Warn("auth failed", "account", accountID, "err", err)
+		s.log.Warn("写入认证失败终态失败", "account", accountID, "err", err)
 	}
 	if changed {
 		s.publishFailed(ctx, accountID, msg, false)

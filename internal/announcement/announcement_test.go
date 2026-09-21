@@ -52,17 +52,6 @@ func TestParseJSONMissingVersionFallsBackToHash(t *testing.T) {
 	}
 }
 
-func TestParseJSONMissingTitleDefaults(t *testing.T) {
-	raw := []byte(`{"notice_version":"2026-08-21","lead":"只有引导"}`)
-	a := parse(raw)
-	if a.Title != "公告" {
-		t.Fatalf("title=%q want 公告", a.Title)
-	}
-	if a.Version != "2026-08-21" {
-		t.Fatalf("version=%q", a.Version)
-	}
-}
-
 func TestNormalizeVisibleHiddenValues(t *testing.T) {
 	for _, v := range []string{"", "none", "false", "None", "FALSE", "  none  "} {
 		if got := normalizeVisible(v); got != "" {
@@ -114,15 +103,6 @@ func TestParseJSONSpecialSection(t *testing.T) {
 	}
 }
 
-func TestParseJSONIgnoresUnknownFields(t *testing.T) {
-	// 样板文件里的 _comment 等未知字段应被忽略
-	raw := []byte(`{"_comment":"用法说明","notice_version":"2026-08-20","dialog_title":"标题","lead":"正文"}`)
-	a := parse(raw)
-	if a.Version != "2026-08-20" || a.Title != "标题" || a.Lead != "正文" {
-		t.Fatalf("unknown fields should be ignored: %+v", a)
-	}
-}
-
 func TestParseJSONBlankSectionsFiltered(t *testing.T) {
 	raw := []byte(`{"dialog_title":"t","issues":[{"title":"","body":""},{"title":"有效","body":"b"}]}`)
 	a := parse(raw)
@@ -149,21 +129,6 @@ func TestParseInvalidJSONIgnored(t *testing.T) {
 	a := parse([]byte("{这不是 JSON\n但确实是文本"))
 	if a != nil {
 		t.Fatalf("非法 JSON 不应被展示: %+v", a)
-	}
-}
-
-func TestHashChangesWithContent(t *testing.T) {
-	h1 := contentHash("hello")
-	h2 := contentHash("hello ")
-	h3 := contentHash("world")
-	if h1 == h3 {
-		t.Fatal("different content should produce different hash")
-	}
-	if len(h1) != 16 || h1 != contentHash("hello") {
-		t.Fatalf("hash unstable: %q", h1)
-	}
-	if h1 == h2 {
-		t.Fatalf("trailing space should change hash: %q vs %q", h1, h2)
 	}
 }
 

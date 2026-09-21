@@ -7,21 +7,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"litepan/internal/mediaorganize/rules"
 )
 
-type movieNFO struct {
-	XMLName xml.Name   `xml:"movie"`
-	Title   string     `xml:"title"`
-	Year    string     `xml:"year,omitempty"`
-	TMDBID  string     `xml:"tmdbid,omitempty"`
-	Plot    string     `xml:"plot,omitempty"`
-	Actors  []nfoActor `xml:"actor,omitempty"`
-}
-
-type tvshowNFO struct {
-	XMLName xml.Name   `xml:"tvshow"`
+type workNFO struct {
+	XMLName xml.Name
 	Title   string     `xml:"title"`
 	Year    string     `xml:"year,omitempty"`
 	TMDBID  string     `xml:"tmdbid,omitempty"`
@@ -58,8 +47,7 @@ type episodeNFO struct {
 
 var nfoRootCloseRe = regexp.MustCompile(`(?i)</(?:movie|tvshow)\s*>`)
 
-// nfoLooksStandard：文件存在且内容含 movie/tvshow 根节点，才算可用的作品 NFO。
-// 压制组随片发布的 MediaInfo 文本等 .nfo 不算，否则会被误判为“已有元数据”。
+// nfoLooksStandard 文件含 movie/tvshow 根节点才算可用 NFO，压制组的 MediaInfo 文本不算。
 func nfoLooksStandard(path string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -69,8 +57,7 @@ func nfoLooksStandard(path string) bool {
 	return strings.Contains(lower, "<movie") || strings.Contains(lower, "<tvshow")
 }
 
-// nfoWriteNeeded：目标 NFO 不存在或不是标准 NFO（如压制组发布的 MediaInfo 文本）时都要重写；
-// 这类文件对 Kodi/Emby 无用，直接覆盖为标准 NFO。
+// nfoWriteNeeded 目标 NFO 不存在或不是标准 NFO 时都要重写，压制组文本对 Kodi/Emby 无用。
 func nfoWriteNeeded(overwrite bool, nfo string) bool {
 	return overwrite || !nfoLooksStandard(nfo)
 }
@@ -216,46 +203,37 @@ func seasonPosterPath(showDir string, season int) string {
 }
 
 func listLocalSeasonNumbers(showDir string) []int {
-	entries, err := os.ReadDir(showDir)
-	if err != nil {
-		return nil
-	}
+	return seasonNumbersFromDirs(listLocalSeasonDirs(showDir))
+}
+
+func seasonNumbersFromDirs(dirs []seasonDir) []int {
 	seen := map[int]struct{}{}
 	var out []int
-	for _, d := range entries {
-		if !d.IsDir() {
+	for _, dir := range dirs {
+		if _, ok := seen[dir.number]; ok {
 			continue
 		}
-		if n := rules.ParseSeasonDirNumber(d.Name()); n != nil {
-			if _, ok := seen[*n]; ok {
-				continue
-			}
-			seen[*n] = struct{}{}
-			out = append(out, *n)
-		}
+		seen[dir.number] = struct{}{}
+		out = append(out, dir.number)
 	}
 	return out
 }
 
 func writeMovieNFO(path, title, tmdbID, plot string, year *int, actors ...nfoActor) error {
-	nfo := movieNFO{
-		Title:  strings.TrimSpace(title),
-		TMDBID: strings.TrimSpace(tmdbID),
-		Plot:   strings.TrimSpace(plot),
-		Actors: actors,
-	}
-	if year != nil && *year > 0 {
-		nfo.Year = fmt.Sprintf("%d", *year)
-	}
-	return writeXML(path, nfo)
+	return writeWorkNFO(path, "movie", title, tmdbID, plot, year, actors)
 }
 
 func writeTVShowNFO(path, title, tmdbID, plot string, year *int, actors ...nfoActor) error {
-	nfo := tvshowNFO{
-		Title:  strings.TrimSpace(title),
-		TMDBID: strings.TrimSpace(tmdbID),
-		Plot:   strings.TrimSpace(plot),
-		Actors: actors,
+	return writeWorkNFO(path, "tvshow", title, tmdbID, plot, year, actors)
+}
+
+func writeWorkNFO(path, root, title, tmdbID, plot string, year *int, actors []nfoActor) error {
+	nfo := workNFO{
+		XMLName: xml.Name{Local: root},
+		Title:   strings.TrimSpace(title),
+		TMDBID:  strings.TrimSpace(tmdbID),
+		Plot:    strings.TrimSpace(plot),
+		Actors:  actors,
 	}
 	if year != nil && *year > 0 {
 		nfo.Year = fmt.Sprintf("%d", *year)

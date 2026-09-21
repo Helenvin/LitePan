@@ -103,7 +103,7 @@ func (b *Bus) dispatch(env envelope) {
 func (b *Bus) safeCall(s subscription, env envelope) {
 	defer func() {
 		if r := recover(); r != nil {
-			b.log.Error("event handler panicked", "event", env.typ.String(), "panic", r)
+			b.log.Error("事件处理器 panic", "event", env.typ.String(), "panic", r)
 		}
 	}()
 	s.call(env.ctx, env.evt)

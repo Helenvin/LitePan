@@ -100,6 +100,13 @@ type Config struct {
 	ProxyURL          string `json:"proxy_url"`
 	Running           bool   `json:"running"`
 	LastError         string `json:"last_error,omitempty"`
+	AdminUsername     string `json:"admin_username,omitempty"`
+	ManagementReady   bool   `json:"management_ready"`
+}
+
+type ManagementUpdateRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type UpdateRequest struct {
@@ -197,7 +204,7 @@ func (s *Service) checkPortConflict(port string) error {
 		return nil
 	}
 	if s.portUsedByEmby != nil && s.portUsedByEmby(port) {
-		return domain.Errorf(domain.CodeValidation, "反代端口与 Emby 反代端口冲突")
+		return domain.Errorf(domain.CodeValidation, "反代端口与 Emby/Jellyfin 反代端口冲突")
 	}
 	return nil
 }
@@ -356,6 +363,8 @@ func (s *Service) configFromSettings() Config {
 	if s.settings == nil {
 		return Config{}
 	}
+	username := strings.TrimSpace(s.settings.StringAllowEmpty(settings.KeyFnosAdminUsername))
+	password := s.settings.StringAllowEmpty(settings.KeyFnosAdminPassword)
 	return Config{
 		Enabled:           s.settings.Bool(settings.KeyFnosEnabled),
 		Name:              normalizeConfigName(s.settings.String(settings.KeyFnosName)),
@@ -363,6 +372,8 @@ func (s *Service) configFromSettings() Config {
 		Port:              strings.TrimSpace(s.settings.String(settings.KeyFnosProxyPort)),
 		PathMaps:          strings.TrimSpace(s.settings.String(settings.KeyFnosStrmPathMaps)),
 		DirectSTRMClients: proxybase.NormalizeClientKeywords(s.settings.StringAllowEmpty(settings.KeyFnosDirectSTRMClients)),
+		AdminUsername:     username,
+		ManagementReady:   username != "" && password != "",
 	}
 }
 

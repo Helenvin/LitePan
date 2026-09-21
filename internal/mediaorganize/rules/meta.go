@@ -20,6 +20,9 @@ func SplitBasename(name string) (stem, ext string) {
 	return splitStemExt(name)
 }
 
+// partSuffixRe 匹配多段标签里的 A/B 分段（如 CD1A / CD1B）。
+var partSuffixRe = regexp.MustCompile(`(?i)^[AB]$`)
+
 func ExtractPartLabel(name string) string {
 	if name == "" {
 		return ""
@@ -27,7 +30,7 @@ func ExtractPartLabel(name string) string {
 	if m := partLabelRe.FindStringSubmatch(name); len(m) >= 3 {
 		kind := strings.ToUpper(m[1])
 		num := m[2]
-		if regexp.MustCompile(`(?i)^[AB]$`).MatchString(num) {
+		if partSuffixRe.MatchString(num) {
 			return kind + strings.ToUpper(num)
 		}
 		if n, err := parseInt(num); err == nil {

@@ -82,7 +82,7 @@ func (s *Server) servePut(w http.ResponseWriter, r *http.Request) {
 
 	tmp, tmpPath, release, err := createWebDAVTempFile(s.fs.dataDir, plan.fileName, s.fs.tempRegistry)
 	if err != nil {
-		s.log.Warn("webdav put temp file", "path", webPath, "err", err)
+		s.log.Warn("WebDAV 上传创建临时文件失败", "path", webPath, "err", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -90,18 +90,18 @@ func (s *Server) servePut(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := io.Copy(tmp, r.Body); err != nil {
 		_ = tmp.Close()
-		s.log.Warn("webdav put read body", "path", webPath, "err", err)
+		s.log.Warn("WebDAV 上传读取请求体失败", "path", webPath, "err", err)
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 	if err := tmp.Close(); err != nil {
-		s.log.Warn("webdav put close temp", "path", webPath, "err", err)
+		s.log.Warn("WebDAV 上传关闭临时文件失败", "path", webPath, "err", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	info, err := os.Stat(tmpPath)
 	if err != nil {
-		s.log.Warn("webdav put stat temp", "path", webPath, "err", err)
+		s.log.Warn("WebDAV 上传读取临时文件信息失败", "path", webPath, "err", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -133,7 +133,7 @@ func (s *Server) servePut(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := s.fs.files.UploadLocal(ctx, plan.accountID, req)
 	if err != nil {
-		s.log.Warn("webdav put upload", "path", webPath, "account", plan.accountID, "err", err)
+		s.log.Warn("WebDAV 上传失败", "path", webPath, "account", plan.accountID, "err", err)
 		writeUploadErr(w, err)
 		return
 	}

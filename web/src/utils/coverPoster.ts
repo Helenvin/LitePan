@@ -1,9 +1,8 @@
-import "@fontsource-variable/noto-serif-sc/wght.css";
 
 export const COVER_POSTER_WIDTH = 1000;
 export const COVER_POSTER_HEIGHT = 1500;
 
-const posterFont = '"Noto Serif SC Variable", "Songti SC", "STSong", serif';
+const posterFont = '"Songti SC", "STSong", "SimSun", serif';
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
 export interface CoverPosterOptions {
@@ -291,8 +290,7 @@ function drawLandscapePackage(
   ctx.fillStyle = "rgba(8,14,24,.10)";
   ctx.fillRect(0, 0, COVER_POSTER_WIDTH, COVER_POSTER_HEIGHT);
 
-  // 前景画面与包装形状是两层独立内容：固定延伸至海报底部附近，
-  // 不再跟随形状高度或透明度改变，避免透明形状仍留下同高色块。
+  // 前景画面与包装形状相互独立，固定延伸至海报底部附近，避免透明形状留下同高色块。
   const imageHeight = 1400;
   const foreground = document.createElement("canvas");
   foreground.width = COVER_POSTER_WIDTH;

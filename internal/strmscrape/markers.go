@@ -26,15 +26,13 @@ const (
 	TVStateUpdating = "updating"
 )
 
-// scrapeState 只落在 .litepan-scrape-pending；完结且无需记忆时删除该文件。
-// 一个作品同时最多只有一个 .litepan 标记文件，所以「已确认 TMDB 没有可选资源」
-// 的结论也记在这里（status=done），而不是另开一个文件。
+// scrapeState 只落在 .litepan-scrape-pending，完结且无需记忆时删除该文件；
+// 一个作品最多只有一个 .litepan 标记，「TMDB 没有可选资源」的结论也记在这里（status=done）。
 type scrapeState struct {
 	Status  string `json:"status,omitempty"` // running|updating|incomplete|doubt|done|ended
 	EpLocal int    `json:"ep_local,omitempty"`
 	EpTMDB  int    `json:"ep_tmdb,omitempty"`
-	// 只写“TMDB 没有”，不写“下载失败”：前者是永久结果，后者下轮应继续重试。
-	// 手动刮削/重新匹配不读这些结论，会重新请求 TMDB 并按最新结果覆写。
+	// 只记“TMDB 没有”不记“下载失败”，后者下轮要继续重试；手动刮削会重新请求并按最新结果覆写。
 	NoBackdrop bool `json:"no_backdrop,omitempty"`
 	NoLogo     bool `json:"no_logo,omitempty"`
 	NoActors   bool `json:"no_actors,omitempty"`
@@ -49,8 +47,7 @@ func isTerminalState(status string) bool {
 	return status == PendingDone || status == PendingEnded
 }
 
-// manualCompleteState 表示用户确认该作品无需继续匹配 TMDB。
-// 独立标记不能再通过“缺少 pending”推断，否则没有 NFO/海报的本地作品会反复进入待刮削。
+// manualCompleteState 表示用户确认无需继续匹配 TMDB，不能靠“缺少 pending”推断，否则本地作品会反复待刮削。
 type manualCompleteState struct {
 	MediaType string `json:"media_type,omitempty"`
 }
@@ -67,12 +64,8 @@ func pendingMarkerPath(g workGroup) string {
 	return workMarkerPath(g, pendingMarkerName)
 }
 
-// syncOptionalAssetState 按本次 TMDB 结果更新可选资源结论，与 pending 状态共用同一个文件：
-//   - 真实 pending（running/updating/incomplete/doubt）不动，结论等下次刮完再写；
-//   - 终态（done/ended）则按最新结果覆写；无结论时删除文件。
-//
-// 只在对应开关打开时记录：开关关闭时根本没检查过这项，不能拿旧结论阻止以后的重刮。
-// actorSkipped 表示本次因 NFO 结构异常未能补写演员，同样记下结论以免每轮重试。
+// syncOptionalAssetState 按本次 TMDB 结果更新可选资源结论，与 pending 共用同一文件：真实 pending 不动，
+// 终态按最新结果覆写；只在开关打开时记录，actorSkipped 表示 NFO 异常未补写演员也要记下结论。
 func syncOptionalAssetState(g workGroup, cfg Settings, info tmdbInfo, actorSkipped bool) {
 	st, ok := readPendingState(g)
 	if ok && !isTerminalState(st.Status) {
@@ -91,11 +84,6 @@ func syncOptionalAssetState(g workGroup, cfg Settings, info tmdbInfo, actorSkipp
 
 func manualCompleteMarkerPath(g workGroup) string {
 	return workMarkerPath(g, manualCompleteMarkerName)
-}
-
-func hasPendingMarker(g workGroup) bool {
-	st, ok := readPendingState(g)
-	return ok && !isTerminalState(st.Status)
 }
 
 func clearPendingMarker(g workGroup) {
@@ -148,8 +136,7 @@ func clearManualComplete(g workGroup) {
 // scrapeMetadataKeywordRe 匹配常见刮削元数据图片名（海报/背景/缩略图等）。
 var scrapeMetadataKeywordRe = regexp.MustCompile(`(?i)\b(poster|backdrop|fanart|folder|thumb|cover|season|banner|logo|landscape|keyart|clearart)\b`)
 
-// isScrapedMetadataFile 判断文件名是否为刮削元数据（.nfo 或常见海报图）。
-// .strm、字幕及其它文件一律不属于刮削元数据。
+// isScrapedMetadataFile 判断文件名是否为刮削元数据（.nfo 或常见海报图），.strm 与字幕不算。
 func isScrapedMetadataFile(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
 	if ext == ".nfo" {
@@ -161,8 +148,7 @@ func isScrapedMetadataFile(name string) bool {
 	return scrapeMetadataKeywordRe.MatchString(name)
 }
 
-// clearScrapedMetadata 取消错误匹配时按类型清理刮削元数据：
-// 删除作品目录下（含季/集子目录）的 .nfo 与常见海报图，保留 .strm、字幕及其它文件。
+// clearScrapedMetadata 取消错误匹配时删除作品目录（含季/集子目录）的 .nfo 与海报图，保留 .strm 和字幕；
 // 扁平单文件作品只清理该 strm 对应的元数据，避免误删同目录其它作品。
 func clearScrapedMetadata(g workGroup) error {
 	// 元数据被清掉后会重新刮削，旧的可选资源结论与终态一并清掉。
@@ -214,10 +200,6 @@ func writePendingState(g workGroup, st scrapeState) error {
 		st.Status = PendingRunning
 	}
 	return writeJSONMarker(pendingMarkerPath(g), st)
-}
-
-func writePendingMarker(g workGroup) error {
-	return writePendingState(g, scrapeState{Status: PendingRunning})
 }
 
 func readPendingState(g workGroup) (scrapeState, bool) {
@@ -290,8 +272,7 @@ func finalizeAfterScrape(g workGroup, mediaType string, epTMDB int, doubt bool) 
 	clearPendingMarker(g)
 }
 
-// markWorkNormal：用户「设为完结」。写终态 ended，之后不再自动刮削该目录
-// （即使本地或 TMDB 有新集也不处理），需要时用「重新刮削」。
+// markWorkNormal 用户「设为完结」时写终态 ended，之后不再自动刮削，需要时用「重新刮削」。
 func markWorkNormal(g workGroup, mediaType string) error {
 	if !workHasNFO(g, mediaType) || !workHasPoster(g, mediaType) {
 		return errRootMetaIncomplete

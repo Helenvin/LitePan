@@ -26,8 +26,7 @@ var (
 	enSeasonSuffixRe = regexp.MustCompile(`(?i)^(?P<title>.+?)[\s._\-]+(?:Season|Series)\s*0*(?P<num>\d{1,3})\s*$`)
 	trailingNumberRe = regexp.MustCompile(`(?P<title>.+?)[\s._\-]*(?P<num>\d{1,2})\s*$`)
 
-	// cnBracketTagRe 匹配含中文关键词的方括号/中文括号标签（[全10集] [内封简英字幕] 【广告】），
-	// 这类标签不参与标题识别；纯数字/字母的方括号（如 [2160p] [01]）不匹配、保留。
+	// cnBracketTagRe 匹配含中文关键词的方括号标签，不参与标题识别；纯数字/字母方括号不匹配。
 	cnBracketTagRe = regexp.MustCompile(`(?i)[\[【][^\]】]*?(?:全\s*[0-9零一二三四五六七八九十百]+\s*[集话]|字幕|内封|外挂|特效|内嵌|压制|配音|音轨|国语|粤语|台配|港配|国配|双语|多音轨|原盘|杜比|特典|花絮|加长版|未删减|导演剪辑|高码率|合集|中英|简繁|广告)[^\]】]*?[\]】]`)
 
 	chineseSubTagRe          = regexp.MustCompile(`(?i)[\[【][^\]】]*?(?:字幕组|压制组|压制|字幕社|动漫国|fansub|sub|raws?|喵萌|霜庭云花|爱恋|猎户|动音漫影|花园字幕组|风之圣殿|澄空学园|轻之国度|肉肉|纪伊宫|银光字幕组|北宇治|漫猫|樱都|桜都|萌樱|悠哈璃羽|云歌|氢气烤肉架|拨雪寻春|沸羊羊|极影|织梦|枫叶|猪猪|幻之|曙光|恶魔岛|爱恋字幕社|Lilith[-\s]?Raws|ANi|VCB[- ]?Studio|DBD|DKB|SweetSub|LoliHouse|Nekomoe|MCE|HYSUB|KTXP|MingY|NC[-\s]?Raws|喵萌奶茶屋|动漫之家)[^\]】]*?[\]】]`)
@@ -60,14 +59,14 @@ var (
 	pureChineseTitleRe   = regexp.MustCompile(`^[\p{Han}]{2,16}$`)
 	chineseTitleCoreRe   = regexp.MustCompile(`^([\p{Han}]+(?:[·・][\p{Han}]+)*)`)
 	enWordRe             = regexp.MustCompile(`[a-z0-9]{3,}`)
-	// seasonOnlyPatterns 识别季-only（无集号）：S01 / Season 1 / 第1季，如 S01.2160p.WEB-DL...
+	// seasonOnlyPatterns 识别无集号的季标记：S01 / Season 1 / 第1季。
 	seasonOnlyPatterns = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)(?:^|[\s._\-])(?:S|Season)\s*0*(\d{1,3})(?:$|[\s._\-])`),
 		regexp.MustCompile(`(?:^|[\s._\-])第\s*(\d{1,3})\s*季(?:$|[\s._\-])`),
 	}
 	// codecEpisodeTokenRe 匹配视频编码 token：H.265 的 265 / x265 / HEVC / AVC
 	codecEpisodeTokenRe = regexp.MustCompile(`(?i)h[\s._\-]?26[45]|x[\s._\-]?26[45]|hevc|avc`)
-	seasonDirPatterns    = []struct {
+	seasonDirPatterns   = []struct {
 		re      *regexp.Regexp
 		extract func([]string) *int
 	}{
@@ -77,23 +76,18 @@ var (
 		{regexp.MustCompile(`(?:^|[^零〇一二两三四五六七八九十百])第([零〇一二两三四五六七八九十百]+)\s*[季部](?:$|[\s._\-()（）【】\[\]])`), func(m []string) *int { return ChineseNumberToInt(m[1]) }},
 	}
 
-	numberPattern = `(\d{1,4}|[零〇一二两三四五六七八九十百]{1,6})`
-)
-
-func compileEpisodePatterns() []*regexp.Regexp {
-	return []*regexp.Regexp{
+	numberPattern         = `(\d{1,4}|[零〇一二两三四五六七八九十百]{1,6})`
+	seasonEpisodePatterns = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)(?:第\s*` + numberPattern + `\s*[季部])\s*第\s*` + numberPattern + `\s*[集话話回]`),
 		regexp.MustCompile(`(?i)(?:第\s*` + numberPattern + `\s*[季部])\s*[Ee][Pp]?\s*` + numberPattern),
 		regexp.MustCompile(`(?i)(?:Season|Series)\s*` + numberPattern + `\s*(?:Episode|Ep|E)\s*` + numberPattern),
 		regexp.MustCompile(`(?i)[Ss]\s*` + numberPattern + `\s*[Ee]\s*` + numberPattern),
 		regexp.MustCompile(`(?i)` + numberPattern + `\s*[xX]\s*` + numberPattern),
 	}
-}
-
-func compileEpisodeOnlyPatterns() []*regexp.Regexp {
-	return []*regexp.Regexp{
+	episodeOnlyPatterns = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)(?:第\s*` + numberPattern + `\s*[集话話回期])`),
 		regexp.MustCompile(`(?i)(?:^|[\s._\-\[])(?:EP|Ep|ep|Episode|episode|E)\s*` + numberPattern + `(?:$|[\s._\-\]])`),
 		regexp.MustCompile(`(?i)(?:^|[\s._\-\[])` + numberPattern + `\s*(?:集|话|話|回|期)(?:$|[\s._\-\]:：])`),
 	}
-}
+	fullEpisodeRe = regexp.MustCompile(`(?i)(?:第\s*` + numberPattern + `\s*[季部]\s*)?(?:第\s*` + numberPattern + `\s*[集话話回期]|EP\s*` + numberPattern + `|E\s*` + numberPattern + `)`)
+)

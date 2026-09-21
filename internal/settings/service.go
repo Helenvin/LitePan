@@ -11,7 +11,7 @@ import (
 	"litepan/internal/domain"
 )
 
-// 内存持有 DB 覆盖值快照（启动加载、写入时增量更新），读取走内存 + 代码默认兜底，避免每次列目录都查库。
+// Service 在内存持有 DB 覆盖值快照，读取走内存加代码默认值，避免每次列目录都查库。
 type Service struct {
 	specs []Spec
 	byKey map[string]*Spec

@@ -272,6 +272,7 @@ const strmPrompt = useStrmDirectoryPrompt({
   refreshing,
   enabled: strmAutoDetectEnabled,
   getDisplayPath: getCurrentDisplayPath,
+  getDirNames: getCurrentBreadcrumbNameParts,
   getParentId: () => currentParentId.value,
 });
 
@@ -423,6 +424,7 @@ async function handleGenerateCurrentDirectoryStrm() {
       account_id: currentAccountId.value,
       parent_id: currentParentId.value,
       path: getCurrentDisplayPath(),
+      dirs: getCurrentBreadcrumbNameParts(),
       items: files.value.map((file) => ({
         id: file.id,
         name: file.name,

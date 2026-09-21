@@ -1,5 +1,4 @@
-// Package proxybase 提供 Emby / 飞牛影视反代共用的只读辅助：
-// STRM play URL 解析、URL/端口规范化、hop-by-hop 头集合与超时常量。
+// Package proxybase 提供 Emby / 飞牛影视反代共用的只读辅助：STRM play URL 解析、URL 规范化与超时常量。
 package proxybase
 
 import (
@@ -35,8 +34,7 @@ func IsLitePanSTRMPath(value string) bool {
 	return StrmPlayPathRE.MatchString(pathValue) || StrmPathPlayPathRE.MatchString(pathValue)
 }
 
-// HopByHopHeaderNames 是反向代理转发时需剥离的 hop-by-hop 头。
-// 注意：升级请求（WebSocket）必须保留 connection/upgrade，见 NewUpgradeProxy。
+// HopByHopHeaderNames 是转发时需剥离的 hop-by-hop 头；升级请求要保留 connection/upgrade。
 var HopByHopHeaderNames = map[string]struct{}{
 	"connection": {}, "keep-alive": {}, "proxy-authenticate": {}, "proxy-authorization": {},
 	"te": {}, "trailers": {}, "transfer-encoding": {}, "upgrade": {}, "host": {},
@@ -50,11 +48,8 @@ func IsUpgradeRequest(r *http.Request) bool {
 	return strings.TrimSpace(r.Header.Get("Upgrade")) != ""
 }
 
-// NewUpgradeProxy 构造用于升级请求（WebSocket）的反向代理。
-// Go 原生 ReverseProxy 会保留 Upgrade/Connection、在上游返回 101 时 Hijack 客户端连接做
-// 双向字节转发，因此无需第三方 WebSocket 库。
-// target 需已包含完整路径与 query（调用方沿用各自的 targetURL 拼接逻辑）。
-// transport 传入调用方的 Transport 以复用 TLS、代理等设置，为 nil 时用默认。
+// NewUpgradeProxy 构造升级请求（WebSocket）用的反向代理，靠 Go 原生 ReverseProxy 保留 Upgrade/Connection
+// 并在上游返回 101 时 Hijack 做双向转发；target 需含完整路径与 query，transport 为 nil 时用默认。
 func NewUpgradeProxy(target *url.URL, transport http.RoundTripper, log *slog.Logger) *httputil.ReverseProxy {
 	if target == nil {
 		return nil
@@ -85,15 +80,6 @@ func NewUpgradeProxy(target *url.URL, transport http.RoundTripper, log *slog.Log
 
 // TestRequestTimeout 是反代连通性测试的上游请求超时。
 const TestRequestTimeout = 20 * time.Second
-
-// ParseLitePanSTRMURL 从 STRM play URL 解析账号 ID 与网盘 file_id。
-func ParseLitePanSTRMURL(value string) (int64, string, bool) {
-	ref, ok := ParseLitePanSTRMReference(value)
-	if !ok || ref.PathBased {
-		return 0, "", false
-	}
-	return ref.AccountID, ref.FileID, true
-}
 
 // LitePanPath 从 STRM 播放地址中提取路径部分（去掉 host 与 query）。
 func LitePanPath(value string) string {
@@ -212,8 +198,7 @@ func MatchesClientKeywords(r *http.Request, value string) bool {
 	return MatchesClientText(value, EmbyClientName(r), r.UserAgent())
 }
 
-// MatchesClientText 判断一组客户端标识文本是否命中关键字列表。
-// 用于只拿得到 User-Agent、无法访问完整 HTTP 请求的播放解析钩子。
+// MatchesClientText 判断客户端标识文本是否命中关键字，用于只拿得到 User-Agent 的解析钩子。
 func MatchesClientText(value string, candidates ...string) bool {
 	haystack := strings.ToLower(strings.Join(candidates, "\n"))
 	for _, keyword := range splitClientKeywords(value) {

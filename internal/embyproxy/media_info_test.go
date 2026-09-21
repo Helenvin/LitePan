@@ -17,6 +17,10 @@ func TestCompleteMediaInfoOnlyProbesIncompleteItems(t *testing.T) {
 	var completed atomic.Bool
 	probed := make([]string, 0, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("ApiKey") != "test-key" || r.Header.Get("Authorization") != `MediaBrowser Token="test-key"` {
+			http.Error(w, "Jellyfin v12 auth required", http.StatusUnauthorized)
+			return
+		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/Items":
 			if r.URL.Query().Get("Fields") != "MediaStreams,MediaSources,Path" {

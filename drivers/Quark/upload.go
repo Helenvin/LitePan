@@ -556,7 +556,6 @@ type quarkResumeCtx struct {
 	pre            *uploadPreData
 	completedEtags map[int]string
 	uploadedBytes  int64
-	progress       int
 }
 
 func normalizeQuarkResumeState(
@@ -611,12 +610,6 @@ func normalizeQuarkResumeState(
 		}
 	}
 	uploaded := uploadutil.UploadedBytesByPartKeys(fileSize, partSize, completed)
-	progress := int(uploaded * 100 / uploadutil.Max64(fileSize, 1))
-	if uploaded >= fileSize {
-		progress = 100
-	} else if progress > 99 {
-		progress = 99
-	}
 	return &quarkResumeCtx{
 		parentID:       parentID,
 		requestedName:  requestedName,
@@ -628,7 +621,6 @@ func normalizeQuarkResumeState(
 		pre:            pre,
 		completedEtags: completed,
 		uploadedBytes:  uploaded,
-		progress:       progress,
 	}
 }
 

@@ -150,7 +150,7 @@ func (s *Service) RunAsync(ctx context.Context, req RunRequest) error {
 		return domain.Errorf(domain.CodeValidation, "strm_task_id 无效")
 	}
 	_ = ctx // 后台任务不随启动请求结束
-	return s.startAsyncOperation(req.StrmTaskID, 0, "准备刮削", "刮削完成", "strm scrape failed", func(runCtx context.Context) error {
+	return s.startAsyncOperation(req.StrmTaskID, 0, "准备刮削", "刮削完成", "STRM 刮削失败", func(runCtx context.Context) error {
 		return s.run(runCtx, req)
 	})
 }
@@ -222,11 +222,7 @@ func (s *Service) Rematch(ctx context.Context, req RematchRequest) (*Item, bool,
 	if req.StrmTaskID <= 0 || strings.TrimSpace(req.ItemID) == "" || strings.TrimSpace(req.TMDBID) == "" {
 		return nil, false, domain.Errorf(domain.CodeValidation, "参数不完整")
 	}
-	_, root, err := s.resolveTask(ctx, req.StrmTaskID)
-	if err != nil {
-		return nil, false, err
-	}
-	g, err := findWorkByID(root, req.ItemID)
+	root, g, err := s.prepareRematchTarget(ctx, req.StrmTaskID, req.ItemID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -244,7 +240,7 @@ func (s *Service) Rematch(ctx context.Context, req RematchRequest) (*Item, bool,
 		display = workDisplayName(g)
 	}
 	current := buildItem(req.StrmTaskID, root, g)
-	err = s.startAsyncOperation(req.StrmTaskID, 1, "正在刮削："+display, "已重新匹配："+display, "strm rematch failed", func(runCtx context.Context) error {
+	err = s.startAsyncOperation(req.StrmTaskID, 1, "正在刮削："+display, "已重新匹配："+display, "STRM 重新匹配失败", func(runCtx context.Context) error {
 		s.setProgress(func(p *Progress) {
 			p.CurrentItemID = req.ItemID
 		})
@@ -364,16 +360,12 @@ func (s *Service) MarkNormal(ctx context.Context, req MarkNormalRequest) (*Item,
 	return &item, nil
 }
 
-// Rescrape：沿用原 TMDB ID，走与「开始刮削」相同的 writeMatchedOpts（含正片季/finale 集数与 pending）。
+// Rescrape 沿用原 TMDB ID，走与「开始刮削」相同的 writeMatchedOpts。
 func (s *Service) Rescrape(ctx context.Context, req RescrapeRequest) (*Item, bool, error) {
 	if req.StrmTaskID <= 0 || strings.TrimSpace(req.ItemID) == "" {
 		return nil, false, domain.Errorf(domain.CodeValidation, "参数不完整")
 	}
-	_, root, err := s.resolveTask(ctx, req.StrmTaskID)
-	if err != nil {
-		return nil, false, err
-	}
-	g, err := findWorkByID(root, req.ItemID)
+	root, g, err := s.prepareRematchTarget(ctx, req.StrmTaskID, req.ItemID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -397,7 +389,7 @@ func (s *Service) Rescrape(ctx context.Context, req RescrapeRequest) (*Item, boo
 	if s.newTMDBClient() == nil {
 		return nil, false, domain.Errorf(domain.CodeValidation, "未配置 TMDB API Key")
 	}
-	err = s.startAsyncOperation(req.StrmTaskID, 1, "正在重新刮削："+display, "已重新刮削："+display, "strm rescrape failed", func(runCtx context.Context) error {
+	err = s.startAsyncOperation(req.StrmTaskID, 1, "正在重新刮削："+display, "已重新刮削："+display, "STRM 重新刮削失败", func(runCtx context.Context) error {
 		s.setProgress(func(p *Progress) {
 			p.CurrentItemID = req.ItemID
 		})
@@ -431,6 +423,15 @@ func (s *Service) Rescrape(ctx context.Context, req RescrapeRequest) (*Item, boo
 		return nil, false, err
 	}
 	return &current, true, nil
+}
+
+func (s *Service) prepareRematchTarget(ctx context.Context, taskID int64, itemID string) (string, workGroup, error) {
+	_, root, err := s.resolveTask(ctx, taskID)
+	if err != nil {
+		return "", workGroup{}, err
+	}
+	g, err := findWorkByID(root, itemID)
+	return root, g, err
 }
 
 func (s *Service) ResolvePosterFile(ctx context.Context, strmTaskID int64, rel string) (string, error) {
@@ -520,8 +521,9 @@ func (s *Service) run(ctx context.Context, req RunRequest) error {
 		if !cfg.EpisodeInfo {
 			clearEpisodePendingIfDisabled(g)
 		}
-		item := buildItem(req.StrmTaskID, root, g)
-		need := mode == WriteModeOverwrite || workNeedsScrape(g, item.MediaType, cfg)
+		inspected := inspectWork(g)
+		item := buildItemFromInspection(req.StrmTaskID, root, g, inspected)
+		need := mode == WriteModeOverwrite || workNeedsScrapeFromInspection(g, cfg, inspected)
 		if !need {
 			s.setProgress(func(p *Progress) {
 				p.Done = i + 1

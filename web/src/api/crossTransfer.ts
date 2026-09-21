@@ -27,16 +27,6 @@ export interface CrossTransferScanFile {
   eligible: boolean;
 }
 
-export interface CrossTransferScanResult {
-  tree: unknown[];
-  total: number;
-  directories: number;
-  shallow_dirs: number;
-  truncated: boolean;
-  truncated_reason?: string;
-  files: CrossTransferScanFile[];
-}
-
 export interface CrossTransferScanSource {
   parent_id: string;
   display_path: string;
@@ -149,10 +139,6 @@ export interface CrossTransferPlainEnqueueResult {
 }
 
 /** 跨盘普传：服务端枚举源目录并直接创建持久化 relay 任务，入队即返回。 */
-export function enqueueCrossTransferPlain(body: CrossTransferPlainEnqueueRequest) {
-  return http.post<CrossTransferPlainEnqueueResult>("/cross-transfer/plain-enqueue", body);
-}
-
 export function enqueueCrossTransferPlainStream(body: CrossTransferPlainEnqueueRequest, signal?: AbortSignal) {
   return streamCrossTransferNDJSON<Record<string, unknown>>("/cross-transfer/plain-enqueue/stream", body, signal);
 }

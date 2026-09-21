@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-
 type ParsedPath struct {
 	AccountName string
 	RelParts    []string

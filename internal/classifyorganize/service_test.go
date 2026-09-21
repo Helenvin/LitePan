@@ -468,9 +468,7 @@ func TestUpdateRejectsUnsafeDirectoryNameAndCondition(t *testing.T) {
 	}
 }
 
-// 防御性加固：firstMatchingRule 命中后，证据必须记录"命中规则"的字段，
-// 而不是循环最后一条被求值规则的残留。（内置模板一级固定 type、二级固定单一字段，
-// 当前校验下同层不会混用字段，属不可触发的加固；直接单测函数行为。）
+// 证据记录的是命中规则的字段，不是循环最后一条被求值规则的残留。
 func TestFirstMatchingRuleEvidenceUsesWinningField(t *testing.T) {
 	svc := newService(t, true)
 	state := &evaluationState{

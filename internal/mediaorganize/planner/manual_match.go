@@ -49,8 +49,7 @@ func (p *Planner) ReplanMatchedGroup(group ManualMatchGroup, raw map[string]any)
 	bucketDefaults := alignDefaults[key]
 	selectedKind := strings.ToLower(strings.TrimSpace(group.MediaKind))
 	if selectedKind == "movie" || selectedKind == "tv" {
-		// 手动选中的 TMDB 类型高于原计划的自动猜测。
-		// 否则纯数字剧集先被猜成电影后，即使用户选中电视剧仍会按电影重建。
+		// 手动选中的类型优先于自动猜测，否则改选后仍按旧类型重建。
 		key.mediaKind = selectedKind
 	}
 	p.recordManualMatchGroup(key, len(items))
@@ -58,6 +57,7 @@ func (p *Planner) ReplanMatchedGroup(group ManualMatchGroup, raw map[string]any)
 	if err := p.planGroupWithMatch(key, items, bucketDefaults, &match, false); err != nil {
 		return nil, err
 	}
+	p.planEmptyDirCleanup()
 	return p.finalize(), nil
 }
 
@@ -65,7 +65,7 @@ func (p *Planner) collectEntriesForManualMatch(group ManualMatchGroup) ([]batchE
 	if group.DirID != "" {
 		return p.collectEntriesUnderDir(group.DirID, group.DirName)
 	}
-	items, err := p.listWithRetry(p.parentID)
+	items, err := p.listWithRetry(p.parentID, "根目录")
 	if err != nil {
 		return nil, err
 	}
@@ -79,8 +79,9 @@ func (p *Planner) collectEntriesForManualMatch(group ManualMatchGroup) ([]batchE
 }
 
 func (p *Planner) collectEntriesUnderDir(dirID, dirName string) ([]batchEntry, error) {
-	items, err := p.listWithRetry(dirID)
+	items, err := p.listWithRetry(dirID, dirName)
 	if err != nil {
+		// 手动指定的目录读不到时直接报错。
 		return nil, err
 	}
 	ancestors := []rules.Ancestor{{ID: dirID, Name: dirName}}

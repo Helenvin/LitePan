@@ -227,7 +227,7 @@ func (s *Service) persist(ctx context.Context, level, category, title, message s
 		RefID:     refID,
 	})
 	if err != nil {
-		s.log.Warn("persist notification failed", "title", title, "err", err)
+		s.log.Warn("写入通知失败", "title", title, "err", err)
 		return
 	}
 	// 新通知落库成功即推送一次未读数，前端铃铛无需再靠轮询发现。

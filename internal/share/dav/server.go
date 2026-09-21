@@ -85,7 +85,7 @@ func New(d Deps) *Server {
 				captured.err = err
 			}
 			if err != nil && log.Enabled(r.Context(), slog.LevelDebug) {
-				log.Debug("webdav", "method", r.Method, "path", r.URL.Path, "err", err)
+				log.Debug("WebDAV 请求处理失败", "method", r.Method, "path", r.URL.Path, "err", err)
 			}
 		},
 	}
@@ -112,6 +112,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticate(w, r) {
 		return
 	}
+	r = r.WithContext(withAccountListCache(r.Context()))
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		if s.serveRead(w, r) {
 			return

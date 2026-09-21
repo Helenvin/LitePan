@@ -29,8 +29,5 @@ func (s *Service) upstreamClient(link domain.DownloadInfo) *http.Client {
 	if link.TransportPolicy == domain.UpstreamTransportForceHTTP2 {
 		return s.clientH2
 	}
-	if benchHTTP2Enabled() {
-		return s.clientH2
-	}
 	return s.clientHTTP1
 }

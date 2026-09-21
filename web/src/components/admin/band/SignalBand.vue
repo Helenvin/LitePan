@@ -286,13 +286,6 @@ const setupHint = computed(() => props.setupRows.map((row) => row.label).join(" 
   background: color-mix(in srgb, var(--brand) 5%, var(--surface));
 }
 
-.signal-band__setup-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
 .signal-band__dismiss {
   /* 隐藏信息面板按钮，常驻这一列右上角 */
   position: absolute;
@@ -331,14 +324,12 @@ const setupHint = computed(() => props.setupRows.map((row) => row.label).join(" 
 
 .band-ring svg,
 
-
 .band-ring__track,
 .band-ring__value {
   fill: none;
   stroke-width: 9;
   stroke-linecap: round;
 }
-
 
 .band-ring__track {
   stroke: var(--border);
@@ -373,83 +364,7 @@ const setupHint = computed(() => props.setupRows.map((row) => row.label).join(" 
   padding: 0 6px;
 }
 
-/* 设置行 */
-.band-setup__list {
-  margin: 10px 0 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.band-setup__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 0;
-  border-bottom: 1px dashed var(--border-soft);
-}
-
-.band-setup__row:last-child {
-  border-bottom: 0;
-}
-
-.band-setup__row dt {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.band-setup__row dd {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.band-setup__open {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 12.5px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
-}
-
-.band-setup__open:hover {
-  border-color: var(--brand);
-  background: var(--accent-soft);
-  color: var(--brand);
-}
-
 /* 折叠态：外壳退化成单列，摘要条才能占满整行（否则会被塞进第一列 150px）。 */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 @media (max-width: 1240px) {
   .signal-band > * {

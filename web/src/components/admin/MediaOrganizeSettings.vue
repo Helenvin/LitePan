@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { getApiErrorMessage } from "@/api/client";
 import {
   fetchMediaOrganizeSettings,
   saveMediaOrganizeSettings,
@@ -17,7 +16,7 @@ import SettingsRow from "@/components/admin/SettingsRow.vue";
 import TmdbHostsHelpTip from "@/components/admin/TmdbHostsHelpTip.vue";
 import { useSettingsForm, bindSettingsPanelExpose, useSettingsSave } from "@/composables/useSettingsForm";
 import { useSettingsLoad } from "@/composables/useSettingsLoad";
-import { toast } from "@/composables/useToast";
+import { runTmdbTest } from "@/composables/useTmdbTest";
 import "@/styles/admin-shared.css";
 
 const ORGANIZE_SETTINGS_ACCENT = "#10b981";
@@ -288,7 +287,7 @@ async function saveSettings() {
 async function testTmdb() {
   tmdbTesting.value = true;
   try {
-    const result = await testMediaOrganizeTmdb({
+    await runTmdbTest(() => testMediaOrganizeTmdb({
       tmdb_api_key: settings.tmdb_api_key,
       tmdb_language: settings.tmdb_language,
       tmdb_api_host: settings.tmdb_api_host,
@@ -297,20 +296,7 @@ async function testTmdb() {
       proxy_url: settings.proxy_url,
       proxy_username: settings.proxy_username,
       proxy_password: settings.proxy_password,
-    });
-    const apiOK = result.api_ok ?? result.ok;
-    const imageOK = result.image_ok ?? true;
-    if (apiOK && imageOK) {
-      toast.success("TMDB 连通正常：API ✓ 图片 ✓");
-    } else if (apiOK && !imageOK) {
-      toast.error("TMDB 部分异常：API ✓ 图片 ×");
-    } else if (!apiOK && imageOK) {
-      toast.error("TMDB 部分异常：API × 图片 ✓");
-    } else {
-      toast.error("TMDB 全部异常：API × 图片 ×");
-    }
-  } catch (e) {
-    toast.error(getApiErrorMessage(e, "TMDB 测试失败"));
+    }));
   } finally {
     tmdbTesting.value = false;
   }

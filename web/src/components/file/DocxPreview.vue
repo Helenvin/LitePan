@@ -229,20 +229,9 @@ onUnmounted(() => {
 .docx-preview__state {
   position: fixed;
   top: 48%;
-  left: 50%;
   z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 18px;
-  border: 1px solid rgb(255 255 255 / 14%);
-  border-radius: var(--radius-control);
   background: rgb(5 14 28 / 90%);
-  box-shadow: 0 18px 55px rgb(0 0 0 / 34%);
-  transform: translate(-50%, -50%);
 }
-
-
 
 .docx-preview__error {
   width: min(430px, calc(100vw - 32px));
@@ -295,7 +284,6 @@ onUnmounted(() => {
 .docx-preview__toolbar button:disabled { cursor: default; opacity: 0.25; }
 .docx-preview__toolbar .docx-preview__scale { width: 50px; color: #8fc7ff; font-size: 11px; font-weight: 650; }
 .docx-preview__divider { width: 1px; height: 24px; margin: 0 4px; background: rgb(145 174 216 / 18%); }
-
 
 @media (max-width: 760px) {
   .docx-preview__stage { inset: 58px 0 0; }

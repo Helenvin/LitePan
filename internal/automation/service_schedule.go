@@ -56,7 +56,7 @@ func (s *Service) schedulerLoop(ctx context.Context) {
 func (s *Service) scheduleOnce(ctx context.Context) {
 	rules, err := s.rules.List(ctx, false)
 	if err != nil {
-		s.log.Warn("automation scheduler list failed", "err", err)
+		s.log.Warn("读取自动化调度列表失败", "err", err)
 		return
 	}
 	now := time.Now()
@@ -80,14 +80,14 @@ func (s *Service) scheduleOnce(ctx context.Context) {
 			if corrected {
 				rule.NextRunAt = nextRun
 				if err := s.rules.Update(ctx, rule); err != nil {
-					s.log.Warn("automation schedule correct next run failed", "rule_id", rule.ID, "err", err)
+					s.log.Warn("校正下次运行时间失败", "rule_id", rule.ID, "err", err)
 				}
 			}
 			continue
 		}
 		rule.NextRunAt = advanceNextRun(rule.TriggerType, cfg, nextRun)
 		if err := s.rules.Update(ctx, rule); err != nil {
-			s.log.Warn("automation schedule update next run failed", "rule_id", rule.ID, "err", err)
+			s.log.Warn("更新下次运行时间失败", "rule_id", rule.ID, "err", err)
 			continue
 		}
 		s.submitRun(rule.ID, "schedule", true)
@@ -105,6 +105,8 @@ func computeNextRun(triggerType string, cfg map[string]any, base time.Time) time
 		return next
 	case domain.AutomationTriggerInterval:
 		return computeIntervalStartRun(cfg, base)
+	case domain.AutomationTriggerAdvanced:
+		return nextAdvancedRun(cfg, base)
 	default:
 		return time.Time{}
 	}
@@ -119,9 +121,45 @@ func advanceNextRun(triggerType string, cfg map[string]any, current time.Time) t
 		return advanceDailyRun(cfg, current)
 	case domain.AutomationTriggerInterval:
 		return advanceIntervalRun(cfg, current)
+	case domain.AutomationTriggerAdvanced:
+		return nextAdvancedRun(cfg, current)
 	default:
 		return time.Time{}
 	}
+}
+
+func nextAdvancedRun(cfg map[string]any, base time.Time) time.Time {
+	base = wallClockTime(base)
+	h, m := parseClock(anyString(cfg["time"]))
+	mode := anyString(cfg["schedule_mode"])
+	selected := map[int]bool{}
+	key := "weekdays"
+	if mode == "monthly" {
+		key = "month_days"
+	}
+	if values, ok := cfg[key].([]any); ok {
+		for _, value := range values {
+			selected[anyInt(value)] = true
+		}
+	}
+	for day := 0; day <= 366; day++ {
+		date := base.AddDate(0, 0, day)
+		candidate := time.Date(date.Year(), date.Month(), date.Day(), h, m, 0, 0, date.Location())
+		if !candidate.After(base) {
+			continue
+		}
+		matches := selected[int(candidate.Weekday())]
+		if candidate.Weekday() == time.Sunday {
+			matches = selected[7]
+		}
+		if mode == "monthly" {
+			matches = selected[candidate.Day()]
+		}
+		if matches {
+			return candidate
+		}
+	}
+	return time.Time{}
 }
 
 func advanceDailyRun(cfg map[string]any, current time.Time) time.Time {

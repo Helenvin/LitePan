@@ -78,7 +78,6 @@ const setupRows = computed(() => {
     :ring-percent="scanSuccessRate"
     ring-label="扫描成功率"
     :stats="statRows"
-    :live-tag="planTag"
     :bar-segments="barSegments"
     :countdown-at="nextRunAt"
     :countdown-task="nextRunTask"

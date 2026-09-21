@@ -9,17 +9,17 @@ import (
 var qualityTokenRe = regexp.MustCompile(`(?i)(?:4320[pP]|2160[pP]|1080[pP]|720[pP]|480[pP]|4[Kk]|2[Kk]|8[Kk]|UHD|FHD|FullHD|WEB[-. ]?DL|WEB[-. ]?Rip|BluRay|BDRip|BDMV|BD25|BD50|HDTV|HDTVrip|DVDRip|DVD[-. ]?9|DVD[-. ]?5|REMUX|Repack|Proper|Extended|Director'?s[. ]Cut|Theatrical|Uncut|HDR10\+?|HDR|Dolby[. ]Vision|DoVi|SDR|HLG|10[. ]?bit|8[. ]?bit|H\.?264|H\.?265|HEVC|AVC|x264|x265|VP9|AV1|DTS[-.]?HD[. ]?MA|DTS[-.]?HD[. ]?HRA|DTS[-.]?HD|DTS[-.]?X|DTS|DDP|DD\+|DD|AC3|EAC3|TrueHD|Atmos|FLAC|AAC|OPUS|MP3|PCM|\d{2,3}(?:\.\d+)?fps|MultiAudio|Multi[. ]?Lang)`)
 
 var (
-	combinedAACChannelsRe  = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9])AAC(\d\.\d)(?:$|[^A-Za-z0-9])`)
-	combinedPCMChannelsRe  = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9])PCM(\d\.\d)(?:$|[^A-Za-z0-9])`)
-	combinedDDChannelsRe   = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9])DD\+?(\d\.\d)(?:$|[^A-Za-z0-9])`)
-	combinedAC3ChannelsRe  = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9])AC3[-.]?(\d\.\d)(?:$|[^A-Za-z0-9])`)
-	dtsXPatternRe          = regexp.MustCompile(`(?i)DTS[-.]?X`)
-	dtsHDMAPatternRe       = regexp.MustCompile(`(?i)DTS[-.]?HD[-.]?MA`)
-	dtsHDHRAPatternRe      = regexp.MustCompile(`(?i)DTS[-.]?HD[-.]?HRA`)
-	dolbyTrueHDPatternRe   = regexp.MustCompile(`(?i)(?:Dolby[-.]?)?TrueHD`)
-	channelLayoutRe        = regexp.MustCompile(`(?:^|[^0-9])([157]\.[01]|2\.0|2\.1|6\.1|1\.0)(?:$|[^0-9])`)
-	frameRateTokenRe       = regexp.MustCompile(`(?i)(?:^|[^0-9])(\d{2,3}(?:\.\d+)?)\s*fps(?:$|[^0-9])`)
-	bracketInnerRe         = regexp.MustCompile(`\[([^\]]+)\]|【([^】]+)】`)
+	combinedAACChannelsRe = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9])AAC(\d\.\d)(?:$|[^A-Za-z0-9])`)
+	combinedPCMChannelsRe = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9])PCM(\d\.\d)(?:$|[^A-Za-z0-9])`)
+	combinedDDChannelsRe  = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9])DD\+?(\d\.\d)(?:$|[^A-Za-z0-9])`)
+	combinedAC3ChannelsRe = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9])AC3[-.]?(\d\.\d)(?:$|[^A-Za-z0-9])`)
+	dtsXPatternRe         = regexp.MustCompile(`(?i)DTS[-.]?X`)
+	dtsHDMAPatternRe      = regexp.MustCompile(`(?i)DTS[-.]?HD[-.]?MA`)
+	dtsHDHRAPatternRe     = regexp.MustCompile(`(?i)DTS[-.]?HD[-.]?HRA`)
+	dolbyTrueHDPatternRe  = regexp.MustCompile(`(?i)(?:Dolby[-.]?)?TrueHD`)
+	channelLayoutRe       = regexp.MustCompile(`(?:^|[^0-9])([157]\.[01]|2\.0|2\.1|6\.1|1\.0)(?:$|[^0-9])`)
+	frameRateTokenRe      = regexp.MustCompile(`(?i)(?:^|[^0-9])(\d{2,3}(?:\.\d+)?)\s*fps(?:$|[^0-9])`)
+	bracketInnerRe        = regexp.MustCompile(`\[([^\]]+)\]|【([^】]+)】`)
 )
 
 var validChannelLayouts = map[string]struct{}{
@@ -84,8 +84,9 @@ func audioCodecRank(codec string) int {
 	if rank > 0 {
 		return rank
 	}
+	// 分类器会把连字符归一成空格，匹配不到 "DTS-HD" 这类写法，这里补上。
 	switch strings.ToUpper(strings.TrimSpace(codec)) {
-	case "DTS:X", "DTS-X":
+	case "DTS-X":
 		return 75
 	case "DTS-HD MA":
 		return 90
@@ -93,20 +94,6 @@ func audioCodecRank(codec string) int {
 		return 85
 	case "DTS-HD":
 		return 80
-	case "DTS":
-		return 70
-	case "TRUEHD":
-		return 100
-	case "DDP":
-		return 60
-	case "DD":
-		return 55
-	case "FLAC":
-		return 50
-	case "AAC":
-		return 40
-	case "PCM":
-		return 30
 	default:
 		return 10
 	}
@@ -260,6 +247,9 @@ func classifyQualityToken(raw string) (field, value string, rank int) {
 	return "", "", 0
 }
 
+// screenSizeTokenRe 匹配分辨率 token（如 1080p / 2160P）。
+var screenSizeTokenRe = regexp.MustCompile(`(?i)^(4320|2160|1080|720|480)[pP]$`)
+
 func classifyScreenSizeToken(token string) (string, int) {
 	switch strings.ToUpper(strings.TrimSpace(token)) {
 	case "8K":
@@ -271,7 +261,7 @@ func classifyScreenSizeToken(token string) (string, int) {
 	case "FHD", "FULLHD":
 		return "1080p", 3
 	}
-	m := regexp.MustCompile(`(?i)^(4320|2160|1080|720|480)[pP]$`).FindStringSubmatch(token)
+	m := screenSizeTokenRe.FindStringSubmatch(token)
 	if len(m) >= 2 {
 		size := strings.ToLower(m[1]) + "p"
 		return size, screenSizeRank(size)

@@ -22,7 +22,7 @@ func (s *Service) onOfflineDownloadCompleted(ctx context.Context, event eventbus
 	}
 	rows, err := s.rules.List(ctx, false)
 	if err != nil {
-		s.log.Warn("automation offline download trigger list failed", "err", err)
+		s.log.Warn("读取离线下载触发列表失败", "err", err)
 		return
 	}
 	for _, row := range rows {

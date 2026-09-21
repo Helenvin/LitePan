@@ -2,6 +2,8 @@ package cache
 
 import (
 	"time"
+
+	"litepan/pkg/safego"
 )
 
 func (s *Service) ConfigurePersistence(enabled bool, dir string, interval time.Duration) {
@@ -49,13 +51,16 @@ func (s *Service) persistLoop(stop chan struct{}) {
 	for {
 		select {
 		case <-t.C:
-			s.persistMu.Lock()
-			dir := s.persistDir
-			enabled := s.persistEnabled
-			s.persistMu.Unlock()
-			if enabled && dir != "" {
-				_ = s.SaveSnapshot(dir)
-			}
+			// 兜住单轮崩溃：落盘出错只跳过这一轮，不能让整个服务下线。
+			safego.Guard(s.log, "cache.persist", func() {
+				s.persistMu.Lock()
+				dir := s.persistDir
+				enabled := s.persistEnabled
+				s.persistMu.Unlock()
+				if enabled && dir != "" {
+					_ = s.SaveSnapshot(dir)
+				}
+			})
 		case <-stop:
 			return
 		}

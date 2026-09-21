@@ -28,6 +28,7 @@ const STRM_SETTINGS_ACCENT = "#7c3aed";
 const MINUTES_PER_HOUR = 60;
 const DEFAULT_SCAN_INTERVAL_MINUTES = 6 * MINUTES_PER_HOUR;
 const metaTmdbTipOpen = ref(false);
+const emit = defineEmits<{ updated: [settings: StrmSettings]; loading: [value: boolean] }>();
 
 type StrmSettingsForm = Pick<
   StrmSettings,
@@ -108,6 +109,7 @@ function defaultScanIntervalHours(): number {
 }
 
 function applySettings(data: Awaited<ReturnType<typeof fetchStrmSettings>>) {
+  emit("updated", data);
   applyBaseline({
     base_url: data.base_url ?? "",
     signature_enabled: !!data.signature_enabled,
@@ -125,9 +127,11 @@ function applySettings(data: Awaited<ReturnType<typeof fetchStrmSettings>>) {
 }
 
 async function loadSettings(options?: { silent?: boolean }) {
+  emit("loading", true);
   await runLoad(async () => {
     applySettings(await fetchStrmSettings());
   }, "加载 STRM 设置失败", options);
+  emit("loading", false);
 }
 
 async function saveSettings() {

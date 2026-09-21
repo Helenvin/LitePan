@@ -10,6 +10,7 @@ import (
 	"litepan/internal/domain"
 	"litepan/internal/embyproxy"
 	filesvc "litepan/internal/file"
+	"litepan/internal/fnosproxy"
 	"litepan/internal/mediaorganize"
 	"litepan/internal/strm"
 	"litepan/internal/strmscrape"
@@ -23,6 +24,7 @@ type Service struct {
 	strmScrape *strmscrape.Service
 	organize   *mediaorganize.Service
 	emby       *embyproxy.Service
+	fnos       *fnosproxy.Service
 	files      *filesvc.Service
 	log        *slog.Logger
 
@@ -45,6 +47,7 @@ type Options struct {
 	StrmScrape *strmscrape.Service
 	Organize   *mediaorganize.Service
 	Emby       *embyproxy.Service
+	Fnos       *fnosproxy.Service
 	Files      *filesvc.Service
 	Log        *slog.Logger
 }
@@ -110,8 +113,6 @@ type WebhookEvent struct {
 	Event  string `json:"event"`
 	Source string `json:"source"`
 	Path   string `json:"path"`
-	// 兼容外部 webhook 携带的延迟字段，当前不参与执行逻辑。
-	DelayTime int `json:"delayTime,omitempty"`
 }
 
 type queuedRun struct {
@@ -132,6 +133,7 @@ func New(opts Options) *Service {
 		strmScrape:   opts.StrmScrape,
 		organize:     opts.Organize,
 		emby:         opts.Emby,
+		fnos:         opts.Fnos,
 		files:        opts.Files,
 		log:          log,
 		runningStep:  make(map[int64]map[string]any),
@@ -235,7 +237,7 @@ func (s *Service) CreateRule(ctx context.Context, in RuleInput) (RuleView, error
 	id, err := s.rules.Create(ctx, row)
 	if err != nil {
 		if rollbackErr := rollbackStrm(ctx); rollbackErr != nil {
-			s.log.Warn("automation rollback strm schedule failed", "err", rollbackErr)
+			s.log.Warn("回滚 STRM 调度失败", "err", rollbackErr)
 		}
 		return RuleView{}, err
 	}
@@ -266,7 +268,7 @@ func (s *Service) UpdateRule(ctx context.Context, id int64, in RuleInput) (RuleV
 	}
 	if err := s.rules.Update(ctx, existing); err != nil {
 		if rollbackErr := rollbackStrm(ctx); rollbackErr != nil {
-			s.log.Warn("automation rollback strm schedule failed", "rule_id", id, "err", rollbackErr)
+			s.log.Warn("回滚 STRM 调度失败", "rule_id", id, "err", rollbackErr)
 		}
 		return RuleView{}, err
 	}
@@ -362,10 +364,12 @@ func (s *Service) ListOptions(ctx context.Context) (map[string]any, error) {
 			})
 		}
 	}
+	fnosReady := s.fnos != nil && s.fnos.ManagementConfigured()
 	return map[string]any{
-		"strm_tasks":     strmData,
-		"organize_tasks": organizeData,
-		"emby_configs":   embyConfigs,
+		"strm_tasks":            strmData,
+		"organize_tasks":        organizeData,
+		"emby_configs":          embyConfigs,
+		"fnos_management_ready": fnosReady,
 	}, nil
 }
 

@@ -18,10 +18,8 @@ export const coverExtractApi = {
   download: () => http.post<CoverRuntime>(`${base}/runtime/download`),
   getStyle: () => http.get<CoverStyle>(`${base}/style`),
   saveStyle: (payload: CoverStyle) => http.put<CoverStyle>(`${base}/style`, payload),
-  // 远端媒体在低带宽或代理模式下可能需要较长时间，避免被通用 90 秒请求超时提前取消。
-  // approx：逐帧候选提取标记（非精确，走关键帧极速路径）。
+  // 远端媒体在低带宽或代理下耗时较长，单独放宽超时避免被默认 90 秒取消；approx 走关键帧极速路径。
   extract: (payload: { session_file_id: string; mode: "head" | "random" | "timestamp" | "probe"; timestamp_ms?: number; approx?: boolean }) => http.postWithTimeout<CoverFile>(`${base}/extract`, payload, 6 * 60_000),
-  save: (payload: { session_file_id: string; frame_id: string; overwrite: boolean }) => http.post<{ ok: boolean; conflict?: boolean; filename: string }>(`${base}/save`, payload),
   saveComposed: (payload: { session_file_id: string; frame_id: string; overwrite: boolean }, poster: Blob) => {
     const form = new FormData();
     form.set("session_file_id", payload.session_file_id);

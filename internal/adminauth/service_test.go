@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -11,6 +12,22 @@ import (
 	"litepan/internal/store"
 	"litepan/pkg/security"
 )
+
+type countingConfigRepo struct {
+	domain.ConfigRepository
+	gets atomic.Int64
+	alls atomic.Int64
+}
+
+func (r *countingConfigRepo) Get(ctx context.Context, key string) (string, bool, error) {
+	r.gets.Add(1)
+	return r.ConfigRepository.Get(ctx, key)
+}
+
+func (r *countingConfigRepo) All(ctx context.Context) (map[string]string, error) {
+	r.alls.Add(1)
+	return r.ConfigRepository.All(ctx)
+}
 
 func newTestAuth(t *testing.T) (*Service, domain.ConfigRepository, context.Context) {
 	t.Helper()
@@ -44,6 +61,51 @@ func newBareTestAuth(t *testing.T) (*Service, domain.ConfigRepository, context.C
 	return New(st.Configs, []byte("test-secret-key-min-16b"), nil), st.Configs, ctx
 }
 
+func TestAdminRequestsReuseConfigSnapshot(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, store.Options{Memory: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	base := store.New(db).Configs
+	if err := base.Set(ctx, KeyAdminUsername, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := base.Set(ctx, KeyAdminPassword, security.HashPassword("changed-secret")); err != nil {
+		t.Fatal(err)
+	}
+	repo := &countingConfigRepo{ConfigRepository: base}
+	svc := New(repo, []byte("test-secret-key-min-16b"), nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/accounts", nil)
+	if err := svc.WriteSession(rec, req, Session{IsAdmin: true, Username: "admin"}, true); err != nil {
+		t.Fatal(err)
+	}
+	cookie := rec.Result().Cookies()[0]
+	for range 20 {
+		checkReq := httptest.NewRequest(http.MethodGet, "/api/admin/accounts", nil)
+		checkReq.AddCookie(cookie)
+		sess, ok := svc.ReadSession(checkReq)
+		if !ok {
+			t.Fatal("session should remain valid")
+		}
+		if err := svc.EnsureAdminAccess(ctx, checkReq, sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := repo.alls.Load(); got != 1 {
+		t.Fatalf("config snapshot loads = %d, want 1", got)
+	}
+	if got := repo.gets.Load(); got != 0 {
+		t.Fatalf("per-key config reads = %d, want 0", got)
+	}
+}
+
 func TestDefaultAdminPasswordIsInitializedAsHashAndMustChange(t *testing.T) {
 	svc, configs, ctx := newBareTestAuth(t)
 
@@ -75,11 +137,11 @@ func TestDefaultAdminPasswordIsInitializedAsHashAndMustChange(t *testing.T) {
 }
 
 func TestPublicIndexIsDisabledByDefault(t *testing.T) {
-	svc, configs, ctx := newBareTestAuth(t)
+	svc, _, ctx := newBareTestAuth(t)
 	if svc.publicIndexEnabled(ctx) {
 		t.Fatal("public index should be disabled by default")
 	}
-	if err := configs.Set(ctx, KeyPublicIndexEnabled, "true"); err != nil {
+	if err := svc.setConfig(ctx, KeyPublicIndexEnabled, "true"); err != nil {
 		t.Fatalf("enable public index: %v", err)
 	}
 	if !svc.publicIndexEnabled(ctx) {

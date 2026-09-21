@@ -7,6 +7,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"litepan/pkg/safego"
 )
 
 // Options 构造日志管理器。
@@ -20,6 +22,7 @@ type Options struct {
 
 // Manager 是进程内统一日志入口：stdout + 异步落盘 + 模块子 logger。
 type Manager struct {
+	base    *slog.Logger
 	storage *Storage
 	root    *slog.Logger
 	level   slog.LevelVar
@@ -64,7 +67,8 @@ func New(opts Options) (*Manager, error) {
 	} else {
 		handler = newStdoutHandler(stdout, &m.level)
 	}
-	m.root = slog.New(handler).With("module", string(ModuleSystem))
+	m.base = slog.New(handler)
+	m.root = m.base.With("module", string(ModuleSystem))
 	return m, nil
 }
 
@@ -72,8 +76,12 @@ func New(opts Options) (*Manager, error) {
 func (m *Manager) Root() *slog.Logger { return m.root }
 
 // For 返回带固定 module 字段的子 logger，全项目统一用此方法取 logger。
+// 从 base 而非 root 派生：root 已带 module=system，再叠加会输出两个同名 module 字段。
 func (m *Manager) For(mod Module) *slog.Logger {
-	return m.root.With("module", mod.String())
+	if mod == ModuleSystem {
+		return m.root
+	}
+	return m.base.With("module", mod.String())
 }
 
 // Storage 暴露落盘存储，供 /api/logs 查询。
@@ -131,7 +139,9 @@ func (m *Manager) StartAutoCleanup(ctx context.Context, days int) {
 	m.cleanupMu.Unlock()
 
 	go func() {
-		m.runCleanupOnce()
+		// 兜住单轮崩溃：清理失败只跳过这一轮，不能让整个服务下线。
+		runOnce := func() { safego.Guard(m.root, "logx.cleanup", m.runCleanupOnce) }
+		runOnce()
 		ticker := time.NewTicker(12 * time.Hour)
 		defer ticker.Stop()
 		for {
@@ -139,7 +149,7 @@ func (m *Manager) StartAutoCleanup(ctx context.Context, days int) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				m.runCleanupOnce()
+				runOnce()
 			}
 		}
 	}()

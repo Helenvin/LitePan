@@ -18,7 +18,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{ "show-panel": []; "open-settings": [] }>();
 
-// 注意：AppMenuPanel 只对 type === "action" 的项派发 select，必须显式声明。
+// AppMenuPanel 只对 type === "action" 的项派发 select，这里需显式声明。
 const items = computed<DropdownMenuItem[]>(() => [
   { key: "show-panel", label: "打开信息面板", type: "action" },
   { key: "open-settings", label: props.settingsLabel, type: "action" },

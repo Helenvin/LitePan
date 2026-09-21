@@ -182,8 +182,7 @@ func (s *Service) SetEnabled(ctx context.Context, on bool) error {
 	return nil
 }
 
-// ApplyConfiguredMountRoot 在启动装配时调用：界面设置 > 环境变量 > 默认值。
-// 环境变量与默认值已在 MountRoot 初始化时解析，这里只处理界面保存的值；修改后需重启生效。
+// ApplyConfiguredMountRoot 启动装配时应用界面保存的挂载根，优先于环境变量和默认值，改后需重启。
 func ApplyConfiguredMountRoot(ctx context.Context, configs domain.ConfigRepository) {
 	if configs == nil {
 		return
@@ -197,8 +196,7 @@ func ApplyConfiguredMountRoot(ctx context.Context, configs domain.ConfigReposito
 	}
 }
 
-// SetConfig 保存本地挂载服务配置。enabled 总是更新；mountRoot 为 nil 时不修改，
-// 非 nil 时保存（空字符串表示清空界面设置，回退到环境变量/默认值），修改后需重启生效。
+// SetConfig 保存本地挂载配置：enabled 总是更新，mountRoot 为 nil 时不动，空串表示清空，改后需重启。
 func (s *Service) SetConfig(ctx context.Context, enabled bool, mountRoot *string) error {
 	if err := s.SetEnabled(ctx, enabled); err != nil {
 		return err
@@ -513,15 +511,13 @@ func (s *Service) Stop(ctx context.Context) {
 	const perMountBudget = 5 * time.Second
 	var wg sync.WaitGroup
 	for _, m := range list {
-		wg.Add(1)
-		go func(m *domain.FuseMount) {
-			defer wg.Done()
+		wg.Go(func() {
 			mountCtx, cancel := context.WithTimeout(ctx, perMountBudget)
 			defer cancel()
 			if err := s.unmountKnown(mountCtx, m); err != nil {
 				s.log.Warn("卸载挂载点失败", "name", m.Name, "mount", m.MountPoint, "err", err)
 			}
-		}(m)
+		})
 	}
 	done := make(chan struct{})
 	go func() {

@@ -141,6 +141,9 @@ export function useOrganizePlanPreview() {
   const skipped = ref<Array<Record<string, unknown>>>([]);
   const needsMatch = ref<PlanNeedsMatch[]>([]);
   const tmdbStatus = ref("");
+  /** 扫描失败的目录；非空表示计划不完整。 */
+  const scanFailed = ref<Array<{ id: string; name: string; error: string }>>([]);
+  const scannedDirs = ref(0);
   const activeTab = ref<"plan" | "skip" | "match">("plan");
   const groupExpanded = ref<Record<string, boolean>>({});
   const rangeExpanded = ref<Record<string, boolean>>({});
@@ -156,6 +159,11 @@ export function useOrganizePlanPreview() {
       ? (rawNeeds as PlanNeedsMatch[]).filter((n) => n && n.group_uid)
       : [];
     tmdbStatus.value = String(plan?.diagnostics?.tmdb_status ?? "");
+    const rawFailed = plan?.diagnostics?.scan_failed;
+    scanFailed.value = Array.isArray(rawFailed)
+      ? (rawFailed as Array<{ id: string; name: string; error: string }>).filter((f) => f && f.id)
+      : [];
+    scannedDirs.value = Number(plan?.diagnostics?.scanned_dirs ?? 0) || 0;
     groupExpanded.value = {};
     rangeExpanded.value = {};
     skipExpandedReasons.value = {};
@@ -349,6 +357,8 @@ export function useOrganizePlanPreview() {
     skipped,
     needsMatch,
     tmdbStatus,
+    scanFailed,
+    scannedDirs,
     activeTab,
     noTmdbCount,
     skipGroups,

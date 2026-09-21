@@ -393,12 +393,10 @@ func (s *Service) listScanBatch(ctx context.Context, accountID int64, nodes []*s
 	results := make([]scanDirResult, len(nodes))
 	var wg sync.WaitGroup
 	for i, node := range nodes {
-		wg.Add(1)
-		go func(i int, node *scanDirNode) {
-			defer wg.Done()
+		wg.Go(func() {
 			items, err := s.files.List(ctx, accountID, node.id, false)
 			results[i] = scanDirResult{node: node, items: items, err: err}
-		}(i, node)
+		})
 	}
 	wg.Wait()
 	return results

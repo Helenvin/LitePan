@@ -32,6 +32,7 @@ type Planner struct {
 	actions           []moplan.PlanAction
 	skippedItems      []map[string]any
 	needsMatch        []map[string]any
+	scanFailures      []map[string]any
 	diagnostics       map[string]any
 	scannedDirs       int
 	scannedDirNames   map[string]string
@@ -270,6 +271,19 @@ func (p *Planner) finalize() *moplan.Plan {
 	} else if p.diagnostics != nil {
 		p.diagnostics["needs_match"] = []map[string]any{}
 	}
+	// 诊断：扫描目录数与失败清单，用于区分「目录为空」和「目录没扫到」。
+	if p.diagnostics != nil {
+		p.diagnostics["scanned_dirs"] = p.scannedDirs
+		if len(p.scanFailures) > 0 {
+			p.diagnostics["scan_failed"] = append([]map[string]any(nil), p.scanFailures...)
+			p.log(fmt.Sprintf("[计划] 有 %d 个目录扫描失败，本次计划可能不完整", len(p.scanFailures)))
+		} else {
+			p.diagnostics["scan_failed"] = []map[string]any{}
+		}
+	}
+	if len(p.actions) == 0 && len(p.skippedItems) == 0 && len(p.scanFailures) == 0 {
+		p.log(fmt.Sprintf("[计划] 已扫描 %d 个目录，未发现可整理的媒体文件（请确认目标目录选对了、且里面确实有视频文件）", p.scannedDirs))
+	}
 	return &moplan.Plan{
 		TaskID:         p.taskID,
 		CreatedAt:      time.Now().Format("2006-01-02 15:04:05"),
@@ -364,14 +378,17 @@ func (p *Planner) isCategoryDir(name string, items []domain.FileItem) bool {
 	return workDirs >= 2 && float64(workDirs)/float64(childDirs) >= 0.5
 }
 
-func (p *Planner) listWithRetry(dirID string) ([]domain.FileItem, error) {
+// listWithRetry 列出目录内容，失败时返回错误，不要吞掉退化成空列表。
+func (p *Planner) listWithRetry(dirID, label string) ([]domain.FileItem, error) {
 	if err := p.checkStop(); err != nil {
 		return nil, err
 	}
 	items, err := p.files.List(p.ctx, p.accountID, dirID, false)
 	if err != nil {
-		p.log(fmt.Sprintf("[计划] 目录扫描失败: %s - %v", dirID, err))
-		return nil, nil
+		if label == "" {
+			label = "目录"
+		}
+		return nil, fmt.Errorf("%s(%s): %w", label, dirID, err)
 	}
 	p.scannedDirs++
 	if p.scannedDirs%5 == 0 {
@@ -380,10 +397,24 @@ func (p *Planner) listWithRetry(dirID string) ([]domain.FileItem, error) {
 	return items, nil
 }
 
+// recordScanFailure 记录扫描失败的目录；计划继续，失败清单进诊断。
+func (p *Planner) recordScanFailure(dirID, label string, err error) {
+	if label == "" {
+		label = "目录"
+	}
+	p.scanFailures = append(p.scanFailures, map[string]any{
+		"id":    dirID,
+		"name":  label,
+		"error": err.Error(),
+	})
+	p.log(fmt.Sprintf("[计划] 目录扫描失败，已跳过 %s：%v", label, err))
+}
+
 func (p *Planner) scanAndPlan(rootID string) error {
-	items, err := p.listWithRetry(rootID)
+	items, err := p.listWithRetry(rootID, "根目录")
 	if err != nil {
-		return err
+		// 根目录读不到时直接报错，不产出空计划。
+		return domain.Errorf(domain.CodeDriverError, "扫描整理目录失败，请确认账号状态正常、目录仍然存在：%v", err)
 	}
 	rootEntries := make([]batchEntry, 0)
 	for _, item := range items {
@@ -419,16 +450,17 @@ func (p *Planner) walkForBatches(dirID string, ancestors []rules.Ancestor) error
 	if p.quotaReached {
 		return nil
 	}
-	items, err := p.listWithRetry(dirID)
-	if err != nil {
-		return err
-	}
-	if err := p.checkStop(); err != nil {
-		return err
-	}
 	dirName := ""
 	if len(ancestors) > 0 {
 		dirName = ancestors[len(ancestors)-1].Name
+	}
+	items, err := p.listWithRetry(dirID, dirName)
+	if err != nil {
+		p.recordScanFailure(dirID, dirName, err)
+		return nil
+	}
+	if err := p.checkStop(); err != nil {
+		return err
 	}
 	p.recordDirMeta(ancestors)
 	if p.isCategoryDir(dirName, items) {
@@ -485,9 +517,14 @@ func (p *Planner) walkForBatches(dirID string, ancestors []rules.Ancestor) error
 }
 
 func (p *Planner) collectDescendants(dirID string, ancestors []rules.Ancestor, out *[]batchEntry) error {
-	items, err := p.listWithRetry(dirID)
+	dirName := ""
+	if len(ancestors) > 0 {
+		dirName = ancestors[len(ancestors)-1].Name
+	}
+	items, err := p.listWithRetry(dirID, dirName)
 	if err != nil {
-		return err
+		p.recordScanFailure(dirID, dirName, err)
+		return nil
 	}
 	p.recordDirMeta(ancestors)
 	for _, item := range items {

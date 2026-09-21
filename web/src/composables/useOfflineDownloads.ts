@@ -39,11 +39,9 @@ function getTargetSegments(task: OfflineDownloadTask) {
 
 export function useOfflineDownloads(deps: Deps) {
   const capability = ref<OfflineDownloadCapabilities | null>(null);
-  const capabilityLoading = ref(false);
   const modalOpen = ref(false);
   const tasks = ref<OfflineDownloadTask[]>([]);
   const loading = ref(false);
-  const refreshing = ref(false);
   let pollTimer: number | undefined;
   let capabilityRequest = 0;
 
@@ -54,18 +52,12 @@ export function useOfflineDownloads(deps: Deps) {
   async function loadCapability(accountId = deps.selectedAccountId.value) {
     const request = ++capabilityRequest;
     capability.value = null;
-    if (!accountId) {
-      capabilityLoading.value = false;
-      return;
-    }
-    capabilityLoading.value = true;
+    if (!accountId) return;
     try {
       const next = await offlineDownloadApi.capabilities(accountId);
       if (request === capabilityRequest) capability.value = next;
     } catch {
       if (request === capabilityRequest) capability.value = null;
-    } finally {
-      if (request === capabilityRequest) capabilityLoading.value = false;
     }
   }
 
@@ -115,19 +107,6 @@ export function useOfflineDownloads(deps: Deps) {
       if (!quiet) toast.error(getApiErrorMessage(error, "离线下载任务加载失败"));
     } finally {
       if (!quiet) loading.value = false;
-      ensurePolling();
-    }
-  }
-
-  async function refreshTasks() {
-    if (refreshing.value) return;
-    refreshing.value = true;
-    try {
-      await replaceTasks(await offlineDownloadApi.refreshTasks());
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "离线下载任务刷新失败"));
-    } finally {
-      refreshing.value = false;
       ensurePolling();
     }
   }
@@ -291,11 +270,9 @@ export function useOfflineDownloads(deps: Deps) {
 
   return {
     capability,
-    capabilityLoading,
     modalOpen,
     tasks,
     loading,
-    refreshing,
     activeTasks,
     failedTasks,
     successfulTasks,
@@ -304,7 +281,6 @@ export function useOfflineDownloads(deps: Deps) {
     closeModal,
     registerTasks,
     fetchTasks,
-    refreshTasks,
     deleteTasks,
     handlePrimaryAction,
     statusText,
@@ -315,5 +291,3 @@ export function useOfflineDownloads(deps: Deps) {
     speedText,
   };
 }
-
-export type OfflineDownloads = ReturnType<typeof useOfflineDownloads>;

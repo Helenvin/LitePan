@@ -79,11 +79,7 @@ func (d *Driver) RefreshAuth(ctx context.Context, _ driver.RefreshCaller) (drive
 	}
 	_, err := d.doRefresh(ctx)
 	if err != nil {
-		outcome := classifyRefreshError(err)
-		if outcome == driver.RefreshFatal {
-			return outcome, err
-		}
-		return outcome, err
+		return classifyRefreshError(err), err
 	}
 	return driver.RefreshSuccess, nil
 }

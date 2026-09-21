@@ -148,7 +148,7 @@ function isRetentionBusy() {
 
 const listPolling = useConditionalPolling({
   intervalMs: 2500,
-  onTick: () => refreshAll(true),
+  onTick: () => refreshTaskState(true),
   shouldPoll: isRetentionBusy,
 });
 
@@ -342,7 +342,11 @@ async function loadStats() {
 }
 
 async function refreshAll(silent = false) {
-  await Promise.all([loadTasks(silent), loadStats(), accountsStore.loadAccounts()]);
+  await Promise.all([refreshTaskState(silent), accountsStore.loadAccounts()]);
+}
+
+async function refreshTaskState(silent = false) {
+  await Promise.all([loadTasks(silent), loadStats()]);
 }
 
 function syncPolling() {

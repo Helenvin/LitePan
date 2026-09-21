@@ -18,7 +18,7 @@ func (s *Service) scheduleOnce(ctx context.Context) {
 	}
 	tasks, err := s.repo.List(ctx)
 	if err != nil {
-		s.log.Warn("strm scheduler list failed", "err", err)
+		s.log.Warn("读取 STRM 调度列表失败", "err", err)
 		return
 	}
 	for _, task := range s.queuedTasks(tasks, time.Now()) {
@@ -209,7 +209,7 @@ func (s *Service) runTaskAsync(task *domain.StrmTask) {
 			)
 		}
 		if err := s.finalizeScanPersist(task.ID, patch); err != nil {
-			s.log.Warn("strm update scan failed", "task_id", task.ID, "err", err)
+			s.log.Warn("更新 STRM 扫描状态失败", "task_id", task.ID, "err", err)
 		}
 		if err == nil || errors.Is(err, context.Canceled) {
 			s.notifyScanFailures(task, result.Failures)

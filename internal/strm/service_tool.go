@@ -64,10 +64,18 @@ func (s *Service) ReconcileDirCache(ctx context.Context, accountID int64, parent
 	now := time.Now()
 	for _, c := range candidates {
 		old, ok := hit[c.DirID]
-		if ok && old != c.DirPath {
-			c.LastSeenAt = now
-			updates = append(updates, c)
+		if !ok {
+			continue
 		}
+		// 浏览路径是前台用「目录名 + "/"」拼出来的字符串，目录名自带斜杠时
+		// 它和多层目录长得一模一样。库里已有的通常是驱动产出的规范写法，
+		// 两种写法等价时必须保留库里那条，否则会把规范路径覆盖回歧义写法，
+		// 增强扫描又会把 strm 建到错误的多层目录下。
+		if pathMatchesIgnoringSeparators(old, c.DirPath) {
+			continue
+		}
+		c.LastSeenAt = now
+		updates = append(updates, c)
 	}
 	if len(updates) == 0 {
 		return

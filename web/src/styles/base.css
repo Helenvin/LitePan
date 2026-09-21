@@ -106,3 +106,25 @@ textarea {
 .file-preview button {
   color: inherit;
 }
+
+:is(
+  .pdf-preview__state,
+  .docx-preview__state,
+  .pptx-preview__state,
+  .text-preview__state,
+  .video-preview__loading,
+  .video-preview__error,
+  .image-preview__loading,
+  .image-preview__error
+) {
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  --preview-overlay-padding: 14px 18px;
+  padding: var(--preview-overlay-padding);
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: var(--radius-control);
+  box-shadow: 0 18px 55px rgb(0 0 0 / 34%);
+}

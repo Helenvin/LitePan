@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -108,35 +107,6 @@ func inspectTree(path string) (treeStats, error) {
 func itemID(kind, target string) string {
 	sum := sha256.Sum256([]byte(kind + "\x00" + filepath.Clean(target)))
 	return hex.EncodeToString(sum[:12])
-}
-
-func sortItems(items []planItem) {
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Category != items[j].Category {
-			return categoryOrder(items[i].Category) < categoryOrder(items[j].Category)
-		}
-		if items[i].Risk != items[j].Risk {
-			return riskOrder(items[i].Risk) < riskOrder(items[j].Risk)
-		}
-		return items[i].Path < items[j].Path
-	})
-}
-
-func categoryOrder(category string) int {
-	switch category {
-	case CategoryStrm:
-		return 0
-	case CategoryTemp:
-		return 1
-	case CategoryLogs:
-		return 2
-	case CategoryCache:
-		return 3
-	case CategoryDatabase:
-		return 4
-	default:
-		return 99
-	}
 }
 
 func riskOrder(risk string) int {

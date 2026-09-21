@@ -24,7 +24,7 @@ func wireFuseReadCache(ctx context.Context, cfg config.Config, st *storeBundle, 
 func wireFuseReadCacheOrNil(ctx context.Context, cfg config.Config, logs *logx.Manager, st *storeBundle, bus *eventbus.Bus) *fusereadcache.Service {
 	svc, err := wireFuseReadCache(ctx, cfg, st, bus)
 	if err != nil {
-		logs.For(logx.ModuleSystem).Warn("fuse read cache init failed", "err", err)
+		logs.For(logx.ModuleSystem).Warn("FUSE 读缓存初始化失败", "err", err)
 		return nil
 	}
 	return svc

@@ -225,9 +225,6 @@ func decodeWebhookEvent(r *http.Request) (automation.WebhookEvent, error) {
 			return automation.WebhookEvent{}, domain.Errorf(domain.CodeValidation, "path 字段解析失败：%v", err)
 		}
 	}
-	if raw, ok := payload["delayTime"]; ok {
-		_ = json.Unmarshal(raw, &event.DelayTime)
-	}
 	return event, nil
 }
 

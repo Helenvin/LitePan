@@ -55,20 +55,7 @@ func normalizeFrameRate(value any) string {
 }
 
 func normalizeVideoCodec(v string) string {
-	mapping := map[string]string{
-		"h.265": "H.265",
-		"h265":  "H.265",
-		"x265":  "H.265",
-		"hevc":  "H.265",
-		"h.264": "H.264",
-		"h264":  "H.264",
-		"x264":  "H.264",
-		"avc":   "H.264",
-		"av1":   "AV1",
-		"vp9":   "VP9",
-	}
-	raw := strings.ToLower(strings.TrimSpace(v))
-	if mapped, ok := mapping[raw]; ok {
+	if mapped := classifyVideoCodecToken(v); mapped != "" {
 		return mapped
 	}
 	if v != "" && isAlphaToken(v) {
@@ -77,8 +64,11 @@ func normalizeVideoCodec(v string) string {
 	return strings.TrimSpace(v)
 }
 
+// trailingVersionRe 匹配音频编码尾部的版本号（如 Atmos 7.1）。
+var trailingVersionRe = regexp.MustCompile(`(?i)\d+\.\d+$`)
+
 func normalizeAudioCodec(v string) string {
-	v = regexp.MustCompile(`(?i)\d+\.\d+$`).ReplaceAllString(strings.TrimSpace(v), "")
+	v = trailingVersionRe.ReplaceAllString(strings.TrimSpace(v), "")
 	v = strings.ToLower(strings.TrimSpace(v))
 	mapping := map[string]string{
 		"dolby digital plus":     "DDP",

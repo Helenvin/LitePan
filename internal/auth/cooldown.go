@@ -29,5 +29,5 @@ func SteppedCooldown(attempts int) time.Duration {
 			return step.cd
 		}
 	}
-	return 1200 * time.Second
+	return activeCooldownSteps[len(activeCooldownSteps)-1].cd
 }

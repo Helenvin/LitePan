@@ -20,10 +20,10 @@ export interface LogStats {
   by_level: Record<string, number>;
   by_module: Record<string, number>;
   recent_errors: number;
-  recent_errors_total: number;
   recent_unacknowledged_errors: number;
   last_recent_error_at?: string;
-  last_acknowledged_error_at?: string;
+  /** true 表示统计因读取预算用尽而提前结束，各计数只是下界。 */
+  truncated?: boolean;
 }
 
 export interface LogCleanupResult {

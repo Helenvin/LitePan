@@ -1,8 +1,8 @@
 package api
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -71,7 +71,10 @@ func (h *Handler) oauthForward(w http.ResponseWriter, r *http.Request, method, u
 		_, _ = w.Write(data)
 		return
 	}
-	_ = lastErr
+	// 重试全部失败时记录真实原因，避免只返回通用文案。
+	if lastErr != nil {
+		requestLogger(r.Context()).Warn("OAuth 转发重试均失败", "url", url, "attempts", maxRetries+1, "err", lastErr)
+	}
 	writeErr(w, domain.Errorf(domain.CodeDriverError, "OAuth 服务暂时不可用，请稍后再试或手动输入 Token"))
 }
 

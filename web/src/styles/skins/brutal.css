@@ -29,17 +29,9 @@
   border-bottom: var(--brutal-bw) solid var(--brutal-ink);
 }
 
-/* ===== 仪表盘：限定 .dashboard-page，不用硬阴影，避免撑出滚动条与 Chrome 边缘露色 ===== */
-:root[data-skin="brutal"] .dashboard-page .dashboard-hero,
-:root[data-skin="brutal"] .dashboard-page .overview-card,
 :root[data-skin="brutal"] .dashboard-page .dashboard-panel {
   border: var(--brutal-bw) solid var(--brutal-ink);
   box-shadow: none;
-}
-
-:root[data-skin="brutal"] .dashboard-page .dashboard-hero,
-:root[data-skin="brutal"] .dashboard-page .overview-card {
-  background: var(--surface);
 }
 
 :root[data-skin="brutal"] .card-action-btn {

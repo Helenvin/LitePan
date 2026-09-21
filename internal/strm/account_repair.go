@@ -13,16 +13,7 @@ import (
 
 const accountRepairSampleSize = 3
 
-type parsedStrmPlayURL struct {
-	AccountID    int64
-	FileID       string
-	RootID       string
-	RelativePath string
-	Token        string
-	FileName     string
-	Signature    string
-	PathBased    bool
-}
+type parsedStrmPlayURL = PlayReference
 
 type AccountRepairPrecheckInput struct {
 	AccountID    int64
@@ -57,14 +48,10 @@ type AccountRepairResult struct {
 }
 
 func repairMatchRequired(sampleTotal int) int {
-	switch {
-	case sampleTotal <= 1:
+	if sampleTotal <= 1 {
 		return 1
-	case sampleTotal == 2:
-		return 2
-	default:
-		return 2
 	}
+	return 2
 }
 
 func parseStrmPlayURL(line string) (parsedStrmPlayURL, bool) {
@@ -72,11 +59,7 @@ func parseStrmPlayURL(line string) (parsedStrmPlayURL, bool) {
 	if !ok || ref.FileName == "" {
 		return parsedStrmPlayURL{}, false
 	}
-	return parsedStrmPlayURL{
-		AccountID: ref.AccountID, FileID: ref.FileID, RootID: ref.RootID,
-		RelativePath: ref.RelativePath, Token: ref.Token, FileName: ref.FileName,
-		Signature: ref.Signature, PathBased: ref.PathBased,
-	}, true
+	return ref, true
 }
 
 func resolveRepairSample(ctx context.Context, files accountRepairFiles, accountID int64, parentID string, sample parsedStrmPlayURL) (*domain.FileItem, error) {

@@ -173,3 +173,54 @@ func TestListIndexItemsQuery(t *testing.T) {
 		t.Fatalf("keyword result=%+v", result)
 	}
 }
+
+func TestNormalizeScopeDirsRemovesDuplicatesAndCoveredChildren(t *testing.T) {
+	got := normalizeScopeDirs([]string{" 电影/临时 ", "电影", "电影/临时", "../非法", "综艺"})
+	want := []string{"电影", "综艺"}
+	if len(got) != len(want) {
+		t.Fatalf("got=%v want=%v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got=%v want=%v", got, want)
+		}
+	}
+}
+
+func TestFilterWorksByScope(t *testing.T) {
+	works := []workGroup{
+		{relKey: "电影/阿凡达 (2009)"},
+		{relKey: "电视剧/藏锋 (2026)"},
+		{relKey: "临时测试/片段"},
+	}
+	got := filterWorksByScope(works, []string{"临时测试", "电影/阿凡达 (2009)"})
+	if len(got) != 1 || got[0].relKey != "电视剧/藏锋 (2026)" {
+		t.Fatalf("unexpected works: %#v", got)
+	}
+}
+
+func TestRelUnderAbsRootWithRelativeFull(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "strm_out")
+	show := filepath.Join(root, "航海王 (1999)")
+	if err := os.MkdirAll(show, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	posterAbs := filepath.Join(show, "poster.jpg")
+	if err := os.WriteFile(posterAbs, []byte("img"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	posterRel, err := filepath.Rel(cwd, posterAbs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := relUnder(root, posterRel)
+	want := filepath.ToSlash(filepath.Join("航海王 (1999)", "poster.jpg"))
+	if filepath.ToSlash(got) != want {
+		t.Fatalf("relUnder=%q want %q（绝对 root + 相对 full 不应退化成 basename）", got, want)
+	}
+}

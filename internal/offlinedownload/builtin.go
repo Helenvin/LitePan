@@ -220,9 +220,9 @@ func (s *Service) Start(ctx context.Context) {
 	s.mu.Unlock()
 
 	if n, err := s.CleanupOrphanTempDirs(runCtx, 0); err != nil {
-		s.log.Warn("builtin offline temp startup cleanup failed", "err", err)
+		s.log.Warn("内置离线下载启动清理失败", "err", err)
 	} else if n > 0 {
-		s.log.Info("builtin offline temp startup cleanup done", "deleted", n)
+		s.log.Info("内置离线下载启动清理完成", "deleted", n)
 	}
 	s.runWG.Add(1)
 	go func() {
@@ -681,10 +681,9 @@ func (s *Service) finishBuiltinDownload(ctx context.Context, taskID, localPath s
 	return true
 }
 
-// handoffBuiltinMagnetResult 把已下载完成的磁力结果交给上传链路：
-//   - 单文件种子：保持原有行为，直接创建一个上传任务；
-//   - 多文件种子：按种子目录结构在目标网盘下创建目录，并为每个文件分别创建
-//     上传任务（统一由本离线任务在全部完成后清理本地目录）。
+// handoffBuiltinMagnetResult 把已下载完成的磁力结果交给上传链路：单文件种子直接建一个上传
+// 任务；多文件种子按种子目录结构在目标网盘建目录，每个文件各建一个任务，本地目录由本离线
+// 任务在全部完成后统一清理。
 func (s *Service) handoffBuiltinMagnetResult(ctx context.Context, taskID, baseDir string, info *metainfo.Info) bool {
 	s.mu.Lock()
 	task, ok := s.tasks[taskID]

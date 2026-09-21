@@ -4,7 +4,7 @@ import "litepan/pkg/jsonvalue"
 
 type flexString = jsonvalue.FlexibleString
 
-// 光鸭云盘账号配置（扫码登录换 Token）
+// Addition 光鸭云盘账号配置（扫码登录换 Token）。
 type Addition struct {
 	AccessToken  string     `json:"access_token" label:"访问令牌" type:"password" form:"required,pair=auth"`
 	RefreshToken string     `json:"refresh_token" label:"刷新令牌" type:"password" form:"required,pair=auth"`

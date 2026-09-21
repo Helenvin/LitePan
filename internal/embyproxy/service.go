@@ -185,14 +185,6 @@ func (s *Service) State(r *http.Request) State {
 	return State{Enabled: s.enabled() && len(items) > 0, Items: items}
 }
 
-func (s *Service) Snapshot(r *http.Request) Config {
-	configs := s.Snapshots(r)
-	if len(configs) > 0 {
-		return configs[0]
-	}
-	return Config{}
-}
-
 func (s *Service) Replace(ctx context.Context, enabled bool, inputs []UpdateRequest) (State, error) {
 	if s.settings == nil {
 		return State{}, domain.Errf(domain.CodeNotImplement)
@@ -215,26 +207,26 @@ func (s *Service) Replace(ctx context.Context, enabled bool, inputs []UpdateRequ
 			cfg.ID = uuid.NewString()
 		}
 		if _, ok := seenIDs[cfg.ID]; ok {
-			return State{}, domain.Errorf(domain.CodeValidation, "Emby 配置重复")
+			return State{}, domain.Errorf(domain.CodeValidation, "Emby/Jellyfin 配置重复")
 		}
 		seenIDs[cfg.ID] = struct{}{}
 		nameKey := strings.ToLower(cfg.Name)
 		if _, ok := seenNames[nameKey]; ok {
-			return State{}, domain.Errorf(domain.CodeValidation, "Emby 配置名称不能重复")
+			return State{}, domain.Errorf(domain.CodeValidation, "Emby/Jellyfin 配置名称不能重复")
 		}
 		seenNames[nameKey] = struct{}{}
 		if old, ok := storedByID[cfg.ID]; ok && isStoredSecretInput(cfg.APIKey, old.APIKey) {
 			cfg.APIKey = old.APIKey
 		}
 		if cfg.EmbyURL == "" || cfg.APIKey == "" {
-			return State{}, domain.Errorf(domain.CodeValidation, "请填写 Emby 地址和 API Key")
+			return State{}, domain.Errorf(domain.CodeValidation, "请填写 Emby/Jellyfin 地址和 API Key")
 		}
 		if enabled && cfg.Port == "" {
-			return State{}, domain.Errorf(domain.CodeValidation, "启用 Emby 反代前，请为所有配置填写反代端口")
+			return State{}, domain.Errorf(domain.CodeValidation, "启用 Emby/Jellyfin 反代前，请为所有配置填写反代端口")
 		}
 		if cfg.Port != "" {
 			if _, ok := seenPorts[cfg.Port]; ok {
-				return State{}, domain.Errorf(domain.CodeValidation, "多个 Emby 反代不能使用同一个端口")
+				return State{}, domain.Errorf(domain.CodeValidation, "多个 Emby/Jellyfin 反代不能使用同一个端口")
 			}
 			seenPorts[cfg.Port] = struct{}{}
 			if err := s.checkFnosPortConflict(cfg.Port); err != nil {
@@ -321,18 +313,19 @@ func (s *Service) TestUpdate(ctx context.Context, in UpdateRequest) error {
 
 func (s *Service) TestConfig(ctx context.Context, cfg Config) error {
 	if strings.TrimSpace(cfg.EmbyURL) == "" {
-		return domain.Errorf(domain.CodeValidation, "请先填写 Emby 地址")
+		return domain.Errorf(domain.CodeValidation, "请先填写 Emby/Jellyfin 地址")
 	}
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return domain.Errorf(domain.CodeValidation, "请先填写 Emby API Key")
+		return domain.Errorf(domain.CodeValidation, "请先填写 Emby/Jellyfin API Key")
 	}
 	testCtx, cancel := context.WithTimeout(ctx, proxybase.TestRequestTimeout)
 	defer cancel()
-	testURL := cfg.EmbyURL + "/System/Info?" + url.Values{"api_key": {cfg.APIKey}}.Encode()
+	testURL := cfg.EmbyURL + "/System/Info?" + mediaServerQuery(cfg.APIKey).Encode()
 	req, err := http.NewRequestWithContext(testCtx, http.MethodGet, testURL, nil)
 	if err != nil {
-		return domain.Errorf(domain.CodeValidation, "Emby 地址无效")
+		return domain.Errorf(domain.CodeValidation, "Emby/Jellyfin 地址无效")
 	}
+	setMediaServerAuth(req, cfg.APIKey)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return embyTestConnectError(err)
@@ -358,32 +351,28 @@ func (s *Service) ListLibraries(ctx context.Context, configIDs ...string) ([]Lib
 
 func (s *Service) listLibraries(ctx context.Context, cfg Config) ([]Library, error) {
 	if strings.TrimSpace(cfg.EmbyURL) == "" {
-		return nil, domain.Errorf(domain.CodeValidation, "请先填写 Emby 地址")
+		return nil, domain.Errorf(domain.CodeValidation, "请先填写 Emby/Jellyfin 地址")
 	}
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, domain.Errorf(domain.CodeValidation, "请先填写 Emby API Key")
+		return nil, domain.Errorf(domain.CodeValidation, "请先填写 Emby/Jellyfin API Key")
 	}
 	base := strings.TrimRight(cfg.EmbyURL, "/")
-	query := url.Values{"api_key": {cfg.APIKey}}.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/Library/SelectableMediaFolders?"+query, nil)
+	items, status, err := s.fetchLibraries(ctx, base+"/Library/SelectableMediaFolders", cfg.APIKey)
 	if err != nil {
-		return nil, domain.Wrap(domain.CodeInternal, err)
+		return nil, err
 	}
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, embyTestConnectError(err)
+	if status == http.StatusNotFound {
+		items, status, err = s.fetchLibraries(ctx, base+"/Library/VirtualFolders", cfg.APIKey)
+		if err != nil {
+			return nil, err
+		}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return nil, embyTestHTTPError(resp.StatusCode)
+	if status >= 400 {
+		return nil, embyTestHTTPError(status)
 	}
-	var payload []map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, domain.Wrap(domain.CodeInternal, err)
-	}
-	out := make([]Library, 0, len(payload))
-	for _, item := range payload {
-		id := strings.TrimSpace(anyString(item["Id"]))
+	out := make([]Library, 0, len(items))
+	for _, item := range items {
+		id := strings.TrimSpace(stringValue(item, "Id", "ItemId"))
 		name := strings.TrimSpace(anyString(item["Name"]))
 		if id == "" || name == "" {
 			continue
@@ -397,16 +386,37 @@ func (s *Service) listLibraries(ctx context.Context, cfg Config) ([]Library, err
 	return out, nil
 }
 
+func (s *Service) fetchLibraries(ctx context.Context, endpoint, apiKey string) ([]map[string]any, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+mediaServerQuery(apiKey).Encode(), nil)
+	if err != nil {
+		return nil, 0, domain.Wrap(domain.CodeInternal, err)
+	}
+	setMediaServerAuth(req, apiKey)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, 0, embyTestConnectError(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, resp.StatusCode, nil
+	}
+	var payload []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, resp.StatusCode, domain.Wrap(domain.CodeInternal, err)
+	}
+	return payload, resp.StatusCode, nil
+}
+
 func (s *Service) RefreshLibrary(ctx context.Context, req RefreshRequest) (RefreshResult, error) {
 	cfg, err := s.resolveConfig(req.ConfigID)
 	if err != nil {
 		return RefreshResult{}, err
 	}
 	if strings.TrimSpace(cfg.EmbyURL) == "" {
-		return RefreshResult{}, domain.Errorf(domain.CodeValidation, "请先填写 Emby 地址")
+		return RefreshResult{}, domain.Errorf(domain.CodeValidation, "请先填写 Emby/Jellyfin 地址")
 	}
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return RefreshResult{}, domain.Errorf(domain.CodeValidation, "请先填写 Emby API Key")
+		return RefreshResult{}, domain.Errorf(domain.CodeValidation, "请先填写 Emby/Jellyfin API Key")
 	}
 	base := strings.TrimRight(cfg.EmbyURL, "/")
 	mode := strings.TrimSpace(req.Mode)
@@ -428,13 +438,14 @@ func withRefreshConfig(result RefreshResult, cfg Config) RefreshResult {
 }
 
 func (s *Service) refreshAllLibraries(ctx context.Context, base, apiKey string) (RefreshResult, error) {
-	query := url.Values{"api_key": {apiKey}}.Encode()
-	taskID, err := s.findLibraryRefreshTask(ctx, base, query)
+	query := mediaServerQuery(apiKey).Encode()
+	taskID, err := s.findLibraryRefreshTask(ctx, base, apiKey)
 	if err == nil && taskID != "" {
 		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, base+"/ScheduledTasks/Running/"+taskID+"?"+query, nil)
 		if reqErr != nil {
 			return RefreshResult{}, domain.Wrap(domain.CodeInternal, reqErr)
 		}
+		setMediaServerAuth(req, apiKey)
 		resp, doErr := s.client.Do(req)
 		if doErr != nil {
 			return RefreshResult{}, embyTestConnectError(doErr)
@@ -448,6 +459,7 @@ func (s *Service) refreshAllLibraries(ctx context.Context, base, apiKey string) 
 	if err != nil {
 		return RefreshResult{}, domain.Wrap(domain.CodeInternal, err)
 	}
+	setMediaServerAuth(req, apiKey)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return RefreshResult{}, embyTestConnectError(err)
@@ -461,7 +473,7 @@ func (s *Service) refreshAllLibraries(ctx context.Context, base, apiKey string) 
 
 func (s *Service) refreshLibraryByID(ctx context.Context, cfg Config, libraryID string) (RefreshResult, error) {
 	if libraryID == "" {
-		return RefreshResult{}, domain.Errorf(domain.CodeValidation, "请选择 Emby 媒体库")
+		return RefreshResult{}, domain.Errorf(domain.CodeValidation, "请选择 Emby/Jellyfin 媒体库")
 	}
 	libraries, err := s.listLibraries(ctx, cfg)
 	if err != nil {
@@ -475,21 +487,20 @@ func (s *Service) refreshLibraryByID(ctx context.Context, cfg Config, libraryID 
 		}
 	}
 	if selected == nil {
-		return RefreshResult{}, domain.Errorf(domain.CodeValidation, "所选 Emby 媒体库不存在")
+		return RefreshResult{}, domain.Errorf(domain.CodeValidation, "所选 Emby/Jellyfin 媒体库不存在")
 	}
 	base := strings.TrimRight(cfg.EmbyURL, "/")
-	query := url.Values{
-		"Recursive":           {"true"},
-		"ImageRefreshMode":    {"Default"},
-		"MetadataRefreshMode": {"Default"},
-		"ReplaceAllImages":    {"false"},
-		"ReplaceAllMetadata":  {"false"},
-		"api_key":             {cfg.APIKey},
-	}.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/Items/"+url.PathEscape(libraryID)+"/Refresh?"+query, nil)
+	query := mediaServerQuery(cfg.APIKey)
+	query.Set("Recursive", "true")
+	query.Set("ImageRefreshMode", "Default")
+	query.Set("MetadataRefreshMode", "Default")
+	query.Set("ReplaceAllImages", "false")
+	query.Set("ReplaceAllMetadata", "false")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/Items/"+url.PathEscape(libraryID)+"/Refresh?"+query.Encode(), nil)
 	if err != nil {
 		return RefreshResult{}, domain.Wrap(domain.CodeInternal, err)
 	}
+	setMediaServerAuth(req, cfg.APIKey)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return RefreshResult{}, embyTestConnectError(err)
@@ -505,18 +516,20 @@ func (s *Service) refreshLibraryByID(ctx context.Context, cfg Config, libraryID 
 	}, nil
 }
 
-func (s *Service) findLibraryRefreshTask(ctx context.Context, base, query string) (string, error) {
+func (s *Service) findLibraryRefreshTask(ctx context.Context, base, apiKey string) (string, error) {
+	query := mediaServerQuery(apiKey).Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/ScheduledTasks?"+query, nil)
 	if err != nil {
 		return "", err
 	}
+	setMediaServerAuth(req, apiKey)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return "", domain.Errorf(domain.CodeDriverError, "读取 Emby 计划任务失败")
+		return "", domain.Errorf(domain.CodeDriverError, "读取 Emby/Jellyfin 计划任务失败")
 	}
 	var tasks []map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&tasks); err != nil {
@@ -535,10 +548,10 @@ func (s *Service) findLibraryRefreshTask(ctx context.Context, base, query string
 func ConfigFromUpdate(in UpdateRequest) (Config, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
-		return Config{}, domain.Errorf(domain.CodeValidation, "请输入 Emby 配置名称")
+		return Config{}, domain.Errorf(domain.CodeValidation, "请输入 Emby/Jellyfin 配置名称")
 	}
 	if len([]rune(name)) > 40 {
-		return Config{}, domain.Errorf(domain.CodeValidation, "Emby 配置名称不能超过 40 个字符")
+		return Config{}, domain.Errorf(domain.CodeValidation, "Emby/Jellyfin 配置名称不能超过 40 个字符")
 	}
 	embyURL, err := normalizeEmbyURL(in.EmbyURL, false)
 	if err != nil {
@@ -560,7 +573,7 @@ func ConfigFromUpdate(in UpdateRequest) (Config, error) {
 
 func (s *Service) Start(ctx context.Context) {
 	if err := s.Sync(ctx); err != nil {
-		s.log.Warn("Emby 反代启动失败", "error", err)
+		s.log.Warn("Emby/Jellyfin 反代启动失败", "error", err)
 	}
 }
 
@@ -604,7 +617,7 @@ func (s *Service) Sync(ctx context.Context) error {
 		listening = append(listening, fmt.Sprintf("%s(:%d)", cfg.Name, port))
 	}
 	if len(listening) > 0 {
-		s.log.Info("Emby 反代已监听", "count", len(listening), "instances", strings.Join(listening, ", "))
+		s.log.Info("Emby/Jellyfin 反代已监听", "count", len(listening), "instances", strings.Join(listening, ", "))
 	}
 	return firstErr
 }
@@ -621,7 +634,7 @@ func (s *Service) startRuntimeLocked(cfg Config, port int) error {
 	rt := &runtime{port: port}
 	s.runtimes[cfg.ID] = rt
 	if cfg.EmbyURL == "" || cfg.APIKey == "" {
-		rt.err = "启用反代时需要填写 Emby 地址和 API Key"
+		rt.err = "启用反代时需要填写 Emby/Jellyfin 地址和 API Key"
 		return domain.Errorf(domain.CodeValidation, "%s", rt.err)
 	}
 	if err := s.checkFnosPortConflict(cfg.Port); err != nil {
@@ -640,7 +653,7 @@ func (s *Service) startRuntimeLocked(cfg Config, port int) error {
 	}
 	ln, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
-		rt.err = fmt.Sprintf("Emby 反代端口 %d 监听失败：%v", port, err)
+		rt.err = fmt.Sprintf("Emby/Jellyfin 反代端口 %d 监听失败：%v", port, err)
 		return domain.Errorf(domain.CodeDriverError, "%s", rt.err)
 	}
 	rt.server = srv
@@ -653,7 +666,7 @@ func (s *Service) startRuntimeLocked(cfg Config, port int) error {
 				active.port = 0
 			}
 			s.mu.Unlock()
-			s.log.Error("Emby 反代服务异常退出", "name", name, "error", err)
+			s.log.Error("Emby/Jellyfin 反代服务异常退出", "name", name, "error", err)
 		}
 	}(cfg.ID, cfg.Name, rt)
 	return nil
@@ -682,7 +695,7 @@ func (s *Service) configsFromSettings() []Config {
 	}
 	var configs []Config
 	if err := json.Unmarshal([]byte(s.settings.String(settings.KeyEmbyProxyInstances)), &configs); err != nil {
-		s.log.Error("Emby 反代配置解析失败", "error", err)
+		s.log.Error("Emby/Jellyfin 反代配置解析失败", "error", err)
 		return nil
 	}
 	for i := range configs {
@@ -709,12 +722,12 @@ func (s *Service) resolveConfig(id string) (Config, error) {
 				return cfg, nil
 			}
 		}
-		return Config{}, domain.Errorf(domain.CodeValidation, "所选 Emby 配置不存在")
+		return Config{}, domain.Errorf(domain.CodeValidation, "所选 Emby/Jellyfin 配置不存在")
 	}
 	if len(configs) > 0 {
 		return configs[0], nil
 	}
-	return Config{}, domain.Errorf(domain.CodeValidation, "请先配置 Emby")
+	return Config{}, domain.Errorf(domain.CodeValidation, "请先配置 Emby/Jellyfin")
 }
 
 func (s *Service) handle(w http.ResponseWriter, r *http.Request) {
@@ -744,8 +757,7 @@ func (s *Service) handleWithConfig(cfg Config, w http.ResponseWriter, r *http.Re
 		http.Error(w, "Emby proxy is not enabled", http.StatusNotFound)
 		return
 	}
-	// WebSocket 等升级请求（Emby for Kodi「Next Gen」的实时通道）必须走 101 隧道：
-	// 普通转发会剥掉 Upgrade 头且只单向回写响应体，握手必然失败。
+	// WebSocket 等升级请求走 101 隧道，普通转发会剥掉 Upgrade 头、握手必然失败。
 	if proxybase.IsUpgradeRequest(r) {
 		s.proxyUpgrade(w, r, cfg)
 		return
@@ -862,24 +874,23 @@ func (s *Service) serveLitePanPlayback(w http.ResponseWriter, r *http.Request, l
 		return false
 	}
 	if err != nil {
-		s.log.Warn("Emby 反代解析路径型 LitePan STRM 失败", "account_id", accountID, "error", err)
+		s.log.Warn("Emby/Jellyfin 反代解析路径型 LitePan STRM 失败", "account_id", accountID, "error", err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return true
 	}
 	if err := s.playbackServe(w, r, playback.Request{AccountID: accountID, FileID: fileID}, playback.Intent{}); err != nil {
 		if isExpectedClientDisconnect(r.Context(), err) {
-			s.log.Debug("Emby 反代播放请求已取消", "account_id", accountID, "file_id", fileID, "error", err)
+			s.log.Debug("Emby/Jellyfin 反代播放请求已取消", "account_id", accountID, "file_id", fileID, "error", err)
 			return true
 		}
-		s.log.Warn("Emby 反代解析 LitePan STRM 失败", "account_id", accountID, "file_id", fileID, "error", err)
+		s.log.Warn("Emby/Jellyfin 反代解析 LitePan STRM 失败", "account_id", accountID, "file_id", fileID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return true
 	}
 	return true
 }
 
-// isExpectedClientDisconnect 识别播放器探测、跳转 Range 或重建播放链路时主动取消的旧请求。
-// 这类错误不代表解析或上游故障，不应记为 Warn，也不再尝试补写 500 响应。
+// isExpectedClientDisconnect 识别播放器主动取消的旧请求，这类错误不记为 Warn，也不补写 500。
 func isExpectedClientDisconnect(ctx context.Context, err error) bool {
 	if err == nil {
 		return false
@@ -971,7 +982,7 @@ func (s *Service) redirectSTRMStream(w http.ResponseWriter, r *http.Request, cfg
 	if m := videoStreamPathRE.FindStringSubmatch(fullPath); len(m) > 1 {
 		itemID = m[1]
 	}
-	s.log.Debug("Emby 反代播放请求来源",
+	s.log.Debug("Emby/Jellyfin 反代播放请求来源",
 		"client", client,
 		"user_agent", r.UserAgent(),
 		"item_id", itemID,
@@ -979,13 +990,13 @@ func (s *Service) redirectSTRMStream(w http.ResponseWriter, r *http.Request, cfg
 		"path", proxybase.LitePanPath(fullPath),
 	)
 	if mediaSourceID == "" {
-		s.log.Debug("Emby 反代播放未携带媒体源，透传上游", "item_id", itemID)
+		s.log.Debug("Emby/Jellyfin 反代播放未携带媒体源，透传上游", "item_id", itemID)
 		s.proxyRequest(w, r, cfg, fullPath)
 		return
 	}
 	if cachedURL := s.lookupMediaSource(cfg, itemID, mediaSourceID); cachedURL != "" {
 		ref, parsed := proxybase.ParseLitePanSTRMReference(cachedURL)
-		s.log.Debug("Emby 反代命中 PlaybackInfo 版本缓存",
+		s.log.Debug("Emby/Jellyfin 反代命中 PlaybackInfo 版本缓存",
 			"item_id", itemID,
 			"requested_media_source_id", mediaSourceID,
 			"account_id", ref.AccountID,
@@ -1017,7 +1028,7 @@ func (s *Service) redirectSTRMStream(w http.ResponseWriter, r *http.Request, cfg
 		}
 		if redirectURL := s.extractLitePanSTRM(mediaSource, r, cfg); redirectURL != "" {
 			ref, parsed := proxybase.ParseLitePanSTRMReference(redirectURL)
-			s.log.Debug("Emby 反代命中多版本媒体源",
+			s.log.Debug("Emby/Jellyfin 反代命中多版本媒体源",
 				"item_id", itemID,
 				"requested_media_source_id", mediaSourceID,
 				"matched_media_source_id", stringValue(mediaSource, "Id", "ID"),
@@ -1038,7 +1049,7 @@ func (s *Service) redirectSTRMStream(w http.ResponseWriter, r *http.Request, cfg
 	itemPath := normalizeMediaURL(stringValue(item, "Path"), r, cfg)
 	if isLitePanSTRMURL(itemPath) {
 		ref, parsed := proxybase.ParseLitePanSTRMReference(itemPath)
-		s.log.Debug("Emby 反代多版本未命中，回退影片公共路径",
+		s.log.Debug("Emby/Jellyfin 反代多版本未命中，回退影片公共路径",
 			"item_id", itemID,
 			"requested_media_source_id", mediaSourceID,
 			"account_id", ref.AccountID,
@@ -1094,14 +1105,14 @@ func (s *Service) modifyPlaybackInfo(w http.ResponseWriter, r *http.Request, cfg
 			resolvedFrom = "item_path_fallback"
 		}
 		if litepanURL == "" {
-			s.log.Debug("Emby 反代 PlaybackInfo 未找到 LitePan STRM",
+			s.log.Debug("Emby/Jellyfin 反代 PlaybackInfo 未找到 LitePan STRM",
 				"item_id", itemID,
 				"media_source_id", mediaSourceID,
 			)
 			continue
 		}
 		ref, parsed := proxybase.ParseLitePanSTRMReference(litepanURL)
-		s.log.Debug("Emby 反代 PlaybackInfo 版本映射",
+		s.log.Debug("Emby/Jellyfin 反代 PlaybackInfo 版本映射",
 			"item_id", itemID,
 			"media_source_id", mediaSourceID,
 			"resolved_from", resolvedFrom,
@@ -1236,13 +1247,11 @@ func (s *Service) fetchEmbyItem(ctx context.Context, cfg Config, itemID string) 
 	if itemID == "" {
 		return nil
 	}
-	params := url.Values{
-		"Ids":       {itemID},
-		"Limit":     {"1"},
-		"Fields":    {"Path,MediaSources"},
-		"Recursive": {"true"},
-		"api_key":   {cfg.APIKey},
-	}
+	params := mediaServerQuery(cfg.APIKey)
+	params.Set("Ids", itemID)
+	params.Set("Limit", "1")
+	params.Set("Fields", "Path,MediaSources")
+	params.Set("Recursive", "true")
 	base := strings.TrimRight(cfg.EmbyURL, "/")
 	candidates := []string{base + "/emby/Items", base + "/Items"}
 	if strings.HasSuffix(strings.ToLower(base), "/emby") {
@@ -1253,6 +1262,7 @@ func (s *Service) fetchEmbyItem(ctx context.Context, cfg Config, itemID string) 
 		if err != nil {
 			continue
 		}
+		setMediaServerAuth(req, cfg.APIKey)
 		resp, err := s.client.Do(req)
 		if err != nil {
 			continue
@@ -1335,13 +1345,13 @@ func normalizeEmbyURL(raw string, required bool) (string, error) {
 	v := strings.TrimRight(strings.TrimSpace(raw), "/")
 	if v == "" {
 		if required {
-			return "", domain.Errorf(domain.CodeValidation, "请填写 Emby 地址")
+			return "", domain.Errorf(domain.CodeValidation, "请填写 Emby/Jellyfin 地址")
 		}
 		return "", nil
 	}
 	u, err := url.Parse(v)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", domain.Errorf(domain.CodeValidation, "Emby 地址格式不正确，示例：http://192.168.1.10:8096")
+		return "", domain.Errorf(domain.CodeValidation, "Emby/Jellyfin 地址格式不正确，示例：http://192.168.1.10:8096")
 	}
 	return v, nil
 }
@@ -1355,7 +1365,22 @@ func proxiedVideoPath(r *http.Request, cfg Config, itemID, mediaSourceID string)
 	if q.Get("api_key") == "" {
 		q.Set("api_key", cfg.APIKey)
 	}
+	if q.Get("ApiKey") == "" {
+		q.Set("ApiKey", cfg.APIKey)
+	}
 	return "/Videos/" + itemID + "/stream?" + q.Encode()
+}
+
+func mediaServerQuery(apiKey string) url.Values {
+	return url.Values{"ApiKey": {apiKey}, "api_key": {apiKey}}
+}
+
+func setMediaServerAuth(req *http.Request, apiKey string) {
+	if req == nil || strings.TrimSpace(apiKey) == "" {
+		return
+	}
+	req.Header.Set("Authorization", "MediaBrowser Token="+strconv.Quote(apiKey))
+	req.Header.Set("X-Emby-Token", apiKey)
 }
 
 func anyString(v any) string {
@@ -1529,31 +1554,31 @@ func isStoredSecretInput(input, stored string) bool {
 func embyTestHTTPError(status int) *domain.AppError {
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return domain.Errorf(domain.CodeDriverError, "Emby API Key 不正确")
+		return domain.Errorf(domain.CodeDriverError, "Emby/Jellyfin API Key 不正确")
 	case http.StatusNotFound:
-		return domain.Errorf(domain.CodeDriverError, "Emby 地址不正确，请检查服务地址")
+		return domain.Errorf(domain.CodeDriverError, "Emby/Jellyfin 地址不正确，请检查服务地址")
 	default:
 		if status >= 500 {
-			return domain.Errorf(domain.CodeDriverError, "Emby 服务异常，请稍后重试")
+			return domain.Errorf(domain.CodeDriverError, "Emby/Jellyfin 服务异常，请稍后重试")
 		}
-		return domain.Errorf(domain.CodeDriverError, "Emby 地址无法访问")
+		return domain.Errorf(domain.CodeDriverError, "Emby/Jellyfin 地址无法访问")
 	}
 }
 
 func embyTestConnectError(err error) *domain.AppError {
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		return domain.Errorf(domain.CodeDriverError, "Emby 地址连接超时，请检查网络与服务是否在线")
+		return domain.Errorf(domain.CodeDriverError, "Emby/Jellyfin 地址连接超时，请检查网络与服务是否在线")
 	}
 	msg := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(msg, "connection refused"):
-		return domain.Errorf(domain.CodeDriverError, "Emby 地址无法连接，请检查地址和端口是否正确")
+		return domain.Errorf(domain.CodeDriverError, "Emby/Jellyfin 地址无法连接，请检查地址和端口是否正确")
 	case strings.Contains(msg, "no such host"), strings.Contains(msg, "cannot resolve"), strings.Contains(msg, "lookup"):
-		return domain.Errorf(domain.CodeDriverError, "Emby 地址无法解析，请检查主机名或 IP")
+		return domain.Errorf(domain.CodeDriverError, "Emby/Jellyfin 地址无法解析，请检查主机名或 IP")
 	case strings.Contains(msg, "context deadline exceeded"), strings.Contains(msg, "timeout"):
-		return domain.Errorf(domain.CodeDriverError, "Emby 地址连接超时，请检查网络与服务是否在线")
+		return domain.Errorf(domain.CodeDriverError, "Emby/Jellyfin 地址连接超时，请检查网络与服务是否在线")
 	default:
-		return domain.Errorf(domain.CodeDriverError, "Emby 地址无法连接，请检查地址是否正确")
+		return domain.Errorf(domain.CodeDriverError, "Emby/Jellyfin 地址无法连接，请检查地址是否正确")
 	}
 }

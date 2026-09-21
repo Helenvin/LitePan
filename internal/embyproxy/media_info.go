@@ -71,19 +71,19 @@ func (s *Service) CompleteMediaInfo(ctx context.Context, req CompleteMediaInfoRe
 		return CompleteMediaInfoResult{}, err
 	}
 	if strings.TrimSpace(cfg.EmbyURL) == "" || strings.TrimSpace(cfg.APIKey) == "" {
-		return CompleteMediaInfoResult{}, domain.Errorf(domain.CodeValidation, "请先完善 Emby 地址和 API Key")
+		return CompleteMediaInfoResult{}, domain.Errorf(domain.CodeValidation, "请先完善 Emby/Jellyfin 地址和 API Key")
 	}
 	result := CompleteMediaInfoResult{ConfigID: cfg.ID, ConfigName: cfg.Name, Mode: strings.TrimSpace(req.Mode)}
 	if result.Mode == "" {
 		result.Mode = "global"
 	}
 	if result.Mode != "global" && result.Mode != "library" {
-		return CompleteMediaInfoResult{}, domain.Errorf(domain.CodeValidation, "Emby 执行范围无效")
+		return CompleteMediaInfoResult{}, domain.Errorf(domain.CodeValidation, "Emby/Jellyfin 执行范围无效")
 	}
 	if result.Mode == "library" {
 		result.LibraryID = strings.TrimSpace(req.LibraryID)
 		if result.LibraryID == "" {
-			return CompleteMediaInfoResult{}, domain.Errorf(domain.CodeValidation, "请选择 Emby 媒体库")
+			return CompleteMediaInfoResult{}, domain.Errorf(domain.CodeValidation, "请选择 Emby/Jellyfin 媒体库")
 		}
 		libraries, listErr := s.listLibraries(ctx, cfg)
 		if listErr != nil {
@@ -96,7 +96,7 @@ func (s *Service) CompleteMediaInfo(ctx context.Context, req CompleteMediaInfoRe
 			}
 		}
 		if result.LibraryName == "" {
-			return CompleteMediaInfoResult{}, domain.Errorf(domain.CodeValidation, "所选 Emby 媒体库不存在")
+			return CompleteMediaInfoResult{}, domain.Errorf(domain.CodeValidation, "所选 Emby/Jellyfin 媒体库不存在")
 		}
 	}
 
@@ -133,7 +133,7 @@ func (s *Service) CompleteMediaInfo(ctx context.Context, req CompleteMediaInfoRe
 			}
 			result.Failed++
 			result.FailedItems = append(result.FailedItems, probe.item.Name)
-			s.log.Warn("Emby 补全媒体信息失败", "config_id", cfg.ID, "item_id", probe.item.ID, "item_name", probe.item.Name, "error", probe.err)
+			s.log.Warn("Emby/Jellyfin 补全媒体信息失败", "config_id", cfg.ID, "item_id", probe.item.ID, "item_name", probe.item.Name, "error", probe.err)
 		}
 		if len(page.Items) < embyMediaInfoPageSize || (page.TotalRecordCount > 0 && start+len(page.Items) >= page.TotalRecordCount) {
 			break
@@ -158,16 +158,16 @@ func (s *Service) CompleteMediaInfo(ctx context.Context, req CompleteMediaInfoRe
 						continue
 					}
 					if timedOutIDs[item.ID] {
-						s.log.Info("Emby 媒体信息提取仍在处理", "config_id", cfg.ID, "item_id", item.ID, "item_name", item.Name)
+						s.log.Info("Emby/Jellyfin 媒体信息提取仍在处理", "config_id", cfg.ID, "item_id", item.ID, "item_name", item.Name)
 					} else {
 						result.Unchanged++
-						s.log.Info("Emby 未写入媒体信息", "config_id", cfg.ID, "item_id", item.ID, "item_name", item.Name)
+						s.log.Info("Emby/Jellyfin 未写入媒体信息", "config_id", cfg.ID, "item_id", item.ID, "item_name", item.Name)
 					}
 				}
 			}
 		}
 	}
-	s.log.Info("Emby 补全媒体信息完成", "config_id", cfg.ID, "library_id", result.LibraryID, "scanned", result.Scanned, "missing", result.Missing, "completed", result.Completed, "timed_out", result.TimedOut, "unchanged", result.Unchanged, "failed", result.Failed)
+	s.log.Info("Emby/Jellyfin 补全媒体信息完成", "config_id", cfg.ID, "library_id", result.LibraryID, "scanned", result.Scanned, "missing", result.Missing, "completed", result.Completed, "timed_out", result.TimedOut, "unchanged", result.Unchanged, "failed", result.Failed)
 	return result, nil
 }
 
@@ -193,11 +193,14 @@ func (s *Service) recheckMediaInfoItems(ctx context.Context, base, apiKey string
 }
 
 func (s *Service) recheckMediaInfoBatch(ctx context.Context, base, apiKey string, ids []string) (map[string]bool, error) {
-	query := url.Values{"api_key": {apiKey}, "Ids": {strings.Join(ids, ",")}, "Fields": {"MediaStreams,MediaSources,Path"}}
+	query := mediaServerQuery(apiKey)
+	query.Set("Ids", strings.Join(ids, ","))
+	query.Set("Fields", "MediaStreams,MediaSources,Path")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/Items?"+query.Encode(), nil)
 	if err != nil {
 		return nil, domain.Wrap(domain.CodeInternal, err)
 	}
+	setMediaServerAuth(req, apiKey)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, embyTestConnectError(err)
@@ -218,10 +221,12 @@ func (s *Service) recheckMediaInfoBatch(ctx context.Context, base, apiKey string
 }
 
 func (s *Service) listMediaInfoItems(ctx context.Context, base, apiKey, libraryID string, start int) (embyMediaInfoPage, error) {
-	query := url.Values{
-		"api_key": {apiKey}, "Recursive": {"true"}, "IncludeItemTypes": {"Movie,Video,Episode"},
-		"Fields": {"MediaStreams,MediaSources,Path"}, "StartIndex": {strconv.Itoa(start)}, "Limit": {strconv.Itoa(embyMediaInfoPageSize)},
-	}
+	query := mediaServerQuery(apiKey)
+	query.Set("Recursive", "true")
+	query.Set("IncludeItemTypes", "Movie,Video,Episode")
+	query.Set("Fields", "MediaStreams,MediaSources,Path")
+	query.Set("StartIndex", strconv.Itoa(start))
+	query.Set("Limit", strconv.Itoa(embyMediaInfoPageSize))
 	if libraryID != "" {
 		query.Set("ParentId", libraryID)
 	}
@@ -229,6 +234,7 @@ func (s *Service) listMediaInfoItems(ctx context.Context, base, apiKey, libraryI
 	if err != nil {
 		return embyMediaInfoPage{}, domain.Wrap(domain.CodeInternal, err)
 	}
+	setMediaServerAuth(req, apiKey)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return embyMediaInfoPage{}, embyTestConnectError(err)
@@ -333,25 +339,26 @@ func (s *Service) probeMediaInfoItems(ctx context.Context, base, apiKey string, 
 func (s *Service) probeMediaInfo(ctx context.Context, base, apiKey, itemID string) (bool, error) {
 	itemID = strings.TrimSpace(itemID)
 	if itemID == "" {
-		return false, domain.Errorf(domain.CodeValidation, "Emby 条目 ID 为空")
+		return false, domain.Errorf(domain.CodeValidation, "Emby/Jellyfin 条目 ID 为空")
 	}
-	query := url.Values{"api_key": {apiKey}}.Encode()
+	query := mediaServerQuery(apiKey).Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/Items/"+url.PathEscape(itemID)+"/PlaybackInfo?"+query, nil)
 	if err != nil {
 		return false, domain.Wrap(domain.CodeInternal, err)
 	}
+	setMediaServerAuth(req, apiKey)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		var netErr net.Error
 		if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
-			return true, errors.New("等待 Emby 媒体信息提取超时")
+			return true, errors.New("等待 Emby/Jellyfin 媒体信息提取超时")
 		}
 		return false, embyTestConnectError(err)
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return false, fmt.Errorf("媒体信息提取失败，Emby 返回 HTTP %d", resp.StatusCode)
+		return false, fmt.Errorf("媒体信息提取失败，Emby/Jellyfin 返回 HTTP %d", resp.StatusCode)
 	}
 	return false, nil
 }

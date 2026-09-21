@@ -37,6 +37,8 @@ const (
 	KeyFnosProxyPort               = "fnos_proxy_port"
 	KeyFnosStrmPathMaps            = "fnos_strm_path_maps"
 	KeyFnosDirectSTRMClients       = "fnos_direct_strm_clients"
+	KeyFnosAdminUsername           = "fnos_admin_username"
+	KeyFnosAdminPassword           = "fnos_admin_password"
 	KeyStrmToken                   = "strm_token"
 	KeyStrmBaseURL                 = "strm_base_url"
 	KeyStrmSignatureEnabled        = "strm_signature_enabled"
@@ -194,6 +196,8 @@ func defaultSpecs() []Spec {
 		stringSpec(KeyFnosProxyPort, "fnos", "反代端口", "可留空。填写并启用后，LitePan 会在该端口启动飞牛影视反代服务。", ""),
 		stringSpec(KeyFnosStrmPathMaps, "fnos", "飞牛 STRM 目录", "填写 Docker 中映射到 /app/strm 的左边路径。例：/vol1/.../LitePanGO:/app/strm → 填 /vol1/.../LitePanGO。两边相同可留空。", ""),
 		{Key: KeyFnosDirectSTRMClients, Type: TypeString, Default: "Infuse", Hidden: true},
+		{Key: KeyFnosAdminUsername, Type: TypeString, Default: "", Hidden: true},
+		{Key: KeyFnosAdminPassword, Type: TypeString, Default: "", Sensitive: true, Hidden: true},
 		stringSpec(KeyStrmToken, "strm", "STRM 播放令牌", "STRM 播放路径鉴权令牌，请在系统设置「API 秘钥」中管理。", ""),
 		stringSpec(KeyStrmBaseURL, "strm", "STRM 基础地址", "生成本地 .strm 时使用的站点基址（例如 https://example.com）。留空时使用当前服务监听地址。", ""),
 		boolSpec(KeyStrmSignatureEnabled, "strm", "启用 STRM 路径签名", "开启后 STRM 播放地址必须携带有效签名。", "false"),

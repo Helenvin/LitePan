@@ -12,16 +12,43 @@ import (
 	"litepan/internal/mediaorganize/rules"
 )
 
-func buildItem(taskID int64, root string, g workGroup) Item {
-	mediaType := resolveWorkMediaType(g)
-	hasNFO := workHasNFO(g, mediaType)
-	hasPoster := workHasPoster(g, mediaType)
+type workInspection struct {
+	mediaType      string
+	hasNFO         bool
+	hasPoster      bool
+	pending        scrapeState
+	hasPending     bool
+	manualComplete bool
+}
+
+func inspectWork(g workGroup) workInspection {
+	manual, manualComplete := readManualComplete(g)
+	mediaType := resolveWorkMediaTypeWithManual(g, manual, manualComplete)
 	pending, hasPending := readPendingState(g)
+	return workInspection{
+		mediaType:      mediaType,
+		hasNFO:         workHasNFO(g, mediaType),
+		hasPoster:      workHasPoster(g, mediaType),
+		pending:        pending,
+		hasPending:     hasPending,
+		manualComplete: manualComplete,
+	}
+}
+
+func buildItem(taskID int64, root string, g workGroup) Item {
+	return buildItemFromInspection(taskID, root, g, inspectWork(g))
+}
+
+func buildItemFromInspection(taskID int64, root string, g workGroup, inspected workInspection) Item {
+	mediaType := inspected.mediaType
+	hasNFO := inspected.hasNFO
+	hasPoster := inspected.hasPoster
+	pending, hasPending := inspected.pending, inspected.hasPending
 	if hasPending && isTerminalState(pending.Status) {
 		// done/ended 不代表待刮削（done 只承载可选资源结论，ended 是用户设为完结）。
 		hasPending = false
 	}
-	_, manualComplete := readManualComplete(g)
+	manualComplete := inspected.manualComplete
 	if manualComplete {
 		hasPending = false
 	}
@@ -142,7 +169,12 @@ type workNFOMeta struct {
 }
 
 func resolveWorkMediaType(g workGroup) string {
-	if manual, ok := readManualComplete(g); ok {
+	manual, ok := readManualComplete(g)
+	return resolveWorkMediaTypeWithManual(g, manual, ok)
+}
+
+func resolveWorkMediaTypeWithManual(g workGroup, manual manualCompleteState, ok bool) string {
+	if ok {
 		mediaType := strings.ToLower(strings.TrimSpace(manual.MediaType))
 		if mediaType == MediaTypeTV || mediaType == MediaTypeMovie {
 			return mediaType
@@ -159,12 +191,13 @@ func resolveWorkMediaType(g workGroup) string {
 	return inferMediaType(g)
 }
 
-// workNeedsScrape：手动完成/设为完结必不刮；有 pending 必刮；无 pending 则根未齐或可选资源未齐时刮。
-func workNeedsScrape(g workGroup, mediaType string, cfg Settings) bool {
-	if _, ok := readManualComplete(g); ok {
+// workNeedsScrapeFromInspection 手动完成或设为完结不刮，有 pending 必刮，否则根未齐或可选资源未齐时刮。
+func workNeedsScrapeFromInspection(g workGroup, cfg Settings, inspected workInspection) bool {
+	if inspected.manualComplete {
 		return false
 	}
-	st, hasState := readPendingState(g)
+	mediaType := inspected.mediaType
+	st, hasState := inspected.pending, inspected.hasPending
 	if hasState && st.Status == PendingEnded {
 		// 用户「设为完结」：不再自动刮削，需手动重新刮削。
 		return false
@@ -174,7 +207,7 @@ func workNeedsScrape(g workGroup, mediaType string, cfg Settings) bool {
 			return true
 		}
 	}
-	if !workHasNFO(g, mediaType) || !workHasPoster(g, mediaType) {
+	if !inspected.hasNFO || !inspected.hasPoster {
 		return true
 	}
 	// 可选资源：本地缺失、且已被记为「TMDB 确实没有」时不再重复请求。
@@ -256,6 +289,10 @@ func seasonDirConflictsFilename(strmPath string, fileSeason int) bool {
 }
 
 func readWorkNFOMeta(g workGroup, mediaType string) (workNFOMeta, bool) {
+	expectedRoot := "movie"
+	if mediaType == MediaTypeTV {
+		expectedRoot = "tvshow"
+	}
 	for _, p := range workNFOCandidates(g, mediaType) {
 		if !fileExists(p) {
 			continue
@@ -264,19 +301,8 @@ func readWorkNFOMeta(g workGroup, mediaType string) (workNFOMeta, bool) {
 		if err != nil {
 			continue
 		}
-		if mediaType == MediaTypeTV {
-			var nfo tvshowNFO
-			if xml.Unmarshal(data, &nfo) != nil {
-				continue
-			}
-			meta := workNFOMeta{Title: strings.TrimSpace(nfo.Title), TMDBID: strings.TrimSpace(nfo.TMDBID)}
-			if y, err := strconv.Atoi(strings.TrimSpace(nfo.Year)); err == nil && y > 0 {
-				meta.Year = &y
-			}
-			return meta, meta.Title != "" || meta.TMDBID != ""
-		}
-		var nfo movieNFO
-		if xml.Unmarshal(data, &nfo) != nil {
+		var nfo workNFO
+		if xml.Unmarshal(data, &nfo) != nil || nfo.XMLName.Local != expectedRoot {
 			continue
 		}
 		meta := workNFOMeta{Title: strings.TrimSpace(nfo.Title), TMDBID: strings.TrimSpace(nfo.TMDBID)}

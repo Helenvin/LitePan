@@ -211,14 +211,9 @@ func (d *Driver) fetchFileDetail(ctx context.Context, fileID string) (fileEntry,
 }
 
 type listOptions struct {
-	dirType           *int
-	fileTypes         []any
-	resType           *int
-	needSubFolderStat bool
-	needPlayRecord    bool
-	orderBy           int
-	sortType          int
-	pageSize          int
+	orderBy  int
+	sortType int
+	pageSize int
 }
 
 func defaultBrowseListOptions() listOptions {
@@ -244,29 +239,13 @@ func recycleListOptions(page int) map[string]any {
 }
 
 func (o listOptions) listBody(parentID string, page int) map[string]any {
-	body := map[string]any{
+	return map[string]any{
 		"parentId": parentID,
 		"page":     page,
 		"pageSize": o.pageSize,
 		"orderBy":  o.orderBy,
 		"sortType": o.sortType,
 	}
-	if o.dirType != nil {
-		body["dirType"] = *o.dirType
-	}
-	if len(o.fileTypes) > 0 {
-		body["fileTypes"] = o.fileTypes
-	}
-	if o.resType != nil {
-		body["resType"] = *o.resType
-	}
-	if o.needSubFolderStat {
-		body["needSubFolderStat"] = true
-	}
-	if o.needPlayRecord {
-		body["needPlayRecord"] = true
-	}
-	return body
 }
 
 func (d *Driver) fetchFileList(ctx context.Context, body map[string]any) (listData, error) {

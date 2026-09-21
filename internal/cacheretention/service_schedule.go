@@ -7,13 +7,16 @@ import (
 	"litepan/internal/auth"
 	"litepan/internal/domain"
 	"litepan/internal/driver"
+	"litepan/pkg/safego"
 )
 
 func (s *Service) schedulerLoop(ctx context.Context) {
 	if !s.awaitStartup(ctx) {
 		return
 	}
-	s.scheduleOnce(ctx)
+	// 兜住单轮崩溃：一轮调度出错只跳过这一轮，不能让整个服务下线。
+	runOnce := func() { safego.Guard(s.log, "cacheretention.schedule", func() { s.scheduleOnce(ctx) }) }
+	runOnce()
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -21,7 +24,7 @@ func (s *Service) schedulerLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.scheduleOnce(ctx)
+			runOnce()
 		}
 	}
 }

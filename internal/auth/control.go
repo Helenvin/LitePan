@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -166,5 +167,12 @@ func (s *Service) recordRefreshFailure(ctx context.Context, id int64, outcome dr
 		return
 	}
 	s.handleFailure(writeCtx, id, latest, outcome, caller, err)
-	s.log.Warn("账号认证刷新失败，已安排下次重试", "account_id", id, "caller", caller, "outcome", outcome.String(), "next_retry_at", latest.NextRetryAt, "error", err)
+	// 主动刷新由调度器统一输出"账号 + 驱动 + 结果 + 下次检查"，这里不再重复一条。
+	if caller == driver.CallerActive {
+		return
+	}
+	name, driverType := s.accountLabel(writeCtx, id)
+	schTime := formatSchedTime(latest.NextRetryAt)
+	s.log.Warn(fmt.Sprintf("账号 %s 认证刷新失败: %v，下次重试 %s", scheduleLabel(name, driverType), err, schTime),
+		"account_id", id, "account", name, "driver", driverType, "caller", callerName(caller), "outcome", outcome.String(), "next_retry_at", schTime, "error", err)
 }

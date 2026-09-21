@@ -39,7 +39,6 @@ type Executor struct {
 	stopFn    StopFunc
 	resolved  map[string]string
 	dirCache  map[string][]domain.FileItem
-	stats     map[string]any
 }
 
 func New(
@@ -67,15 +66,6 @@ func New(
 		stopFn:    checkStop,
 		resolved:  map[string]string{},
 		dirCache:  map[string][]domain.FileItem{},
-		stats: map[string]any{
-			"ensured_dirs":  0,
-			"relocated":     0,
-			"renamed_meta":  0,
-			"skipped":       0,
-			"failed":        0,
-			"overwritten":   0,
-			"total_actions": len(plan.Actions),
-		},
 	}
 }
 
@@ -126,7 +116,6 @@ func (e *Executor) Apply() (map[string]any, error) {
 	}
 	return map[string]any{
 		"task_id": e.plan.TaskID,
-		"stats":   e.stats,
 		"actions": e.plan.Actions,
 	}, nil
 }
@@ -139,14 +128,7 @@ func (e *Executor) finishAction(action *moplan.PlanAction, err error, label stri
 		}
 		action.Status = "failed"
 		action.Error = err.Error()
-		e.incStat("failed")
 		e.log(fmt.Sprintf("[执行] 动作失败 %s (%s): %v", action.ID, label, err))
-	}
-}
-
-func (e *Executor) incStat(key string) {
-	if n, ok := e.stats[key].(int); ok {
-		e.stats[key] = n + 1
 	}
 }
 
@@ -186,7 +168,6 @@ func (e *Executor) prescanConflicts(relocateActions []*moplan.PlanAction) error 
 				action.Status = "skipped"
 				action.Error = fmt.Sprintf("另一项也将生成同名「%s」", action.TargetName)
 				action.ExecutedAt = nowStr()
-				e.incStat("skipped")
 				continue
 			}
 			if existingID := nameIndex[action.TargetName]; existingID != "" && existingID != action.SourceID {
@@ -196,7 +177,6 @@ func (e *Executor) prescanConflicts(relocateActions []*moplan.PlanAction) error 
 					action.Status = "skipped"
 					action.Error = "目标已存在同名（未开启覆盖）"
 					action.ExecutedAt = nowStr()
-					e.incStat("skipped")
 					continue
 				}
 			}
@@ -231,7 +211,6 @@ func (e *Executor) executeRelocates(relocateActions []*moplan.PlanAction) error 
 			action.Status = "failed"
 			action.Error = "目标父目录未解析"
 			action.ExecutedAt = nowStr()
-			e.incStat("failed")
 			continue
 		}
 		if action.SourceParentID == targetParentID {
@@ -304,8 +283,6 @@ func (e *Executor) execOverwriteDeletions(actions []*moplan.PlanAction) error {
 		}
 		if err := e.files.DeleteFiles(e.ctx, e.accountID, ids, parentID); err != nil {
 			e.log(fmt.Sprintf("[覆盖] 删除失败: %v", err))
-		} else {
-			e.stats["overwritten"] = metaInt(e.stats["overwritten"]) + len(ids)
 		}
 		e.invalidateDirCache(parentID)
 	}
@@ -348,14 +325,12 @@ func (e *Executor) execSameDirRename(action *moplan.PlanAction) error {
 		action.Status = "failed"
 		action.Error = fmt.Sprintf("源文件不存在: %s", action.SourceID)
 		action.ExecutedAt = nowStr()
-		e.incStat("failed")
 		return nil
 	}
 	if current.Name == action.TargetName {
 		action.Status = "skipped"
 		action.Error = "已是目标名"
 		action.ExecutedAt = nowStr()
-		e.incStat("skipped")
 		return nil
 	}
 	beforeName := current.Name
@@ -367,18 +342,7 @@ func (e *Executor) execSameDirRename(action *moplan.PlanAction) error {
 	if err := e.renameWithVerify(renameID, action.TargetName, action.SourceParentID, beforeName); err != nil {
 		return err
 	}
-	if isPathFileID(renameID) {
-		action.SourceID = renamedPathID(renameID, action.TargetName)
-	} else {
-		action.SourceID = renameID
-	}
-	if oldDirPrefix != "" {
-		e.remapPathPrefix(oldDirPrefix, action.SourceID)
-	}
-	action.Status = "done"
-	action.ResolvedID = action.SourceID
-	action.ExecutedAt = nowStr()
-	e.incStat("relocated")
+	e.finishRename(action, renameID, oldDirPrefix)
 	e.invalidateDirCache(action.SourceParentID)
 	e.log(fmt.Sprintf("[执行] 改名 %s → %s", beforeName, action.TargetName))
 	return nil
@@ -400,7 +364,6 @@ func (e *Executor) execBatchMove(actions []*moplan.PlanAction, currentParent, ta
 			action.Status = "failed"
 			action.Error = fmt.Sprintf("源文件不存在: %s", action.SourceID)
 			action.ExecutedAt = nowStr()
-			e.incStat("failed")
 			continue
 		}
 		ids = append(ids, current.ID)
@@ -447,7 +410,6 @@ func (e *Executor) execBatchMove(actions []*moplan.PlanAction, currentParent, ta
 			action.Status = "failed"
 			action.Error = fmt.Sprintf("移动失败: %v", err)
 			action.ExecutedAt = nowStr()
-			e.incStat("failed")
 			continue
 		}
 		e.applyPathMoveResult(action, targetParentID)
@@ -465,14 +427,12 @@ func (e *Executor) postMoveRename(action *moplan.PlanAction, targetParentID stri
 		action.Status = "failed"
 		action.Error = "移动后目标目录找不到文件"
 		action.ExecutedAt = nowStr()
-		e.incStat("failed")
 		return nil
 	}
 	if current.Name == action.TargetName {
 		action.Status = "done"
 		action.ResolvedID = current.ID
 		action.ExecutedAt = nowStr()
-		e.incStat("relocated")
 		e.log(fmt.Sprintf("[执行] 整理 %s（同名免改）", current.Name))
 		return nil
 	}
@@ -483,16 +443,13 @@ func (e *Executor) postMoveRename(action *moplan.PlanAction, targetParentID stri
 				action.Status = "failed"
 				action.Error = fmt.Sprintf("覆盖冲突文件失败: %v", err)
 				action.ExecutedAt = nowStr()
-				e.incStat("failed")
 				return nil
 			}
 			e.invalidateDirCache(targetParentID)
-			e.stats["overwritten"] = metaInt(e.stats["overwritten"]) + 1
 		} else {
 			action.Status = "skipped"
 			action.Error = "执行期间目标已存在同名"
 			action.ExecutedAt = nowStr()
-			e.incStat("skipped")
 			return nil
 		}
 	}
@@ -504,10 +461,16 @@ func (e *Executor) postMoveRename(action *moplan.PlanAction, targetParentID stri
 	if err := e.renameWithVerify(renameID, action.TargetName, targetParentID, current.Name); err != nil {
 		return err
 	}
+	e.finishRename(action, renameID, oldDirPrefix)
+	e.invalidateDirCache(targetParentID)
+	e.log(fmt.Sprintf("[执行] 整理 %s → %s", current.Name, action.TargetName))
+	return nil
+}
+
+func (e *Executor) finishRename(action *moplan.PlanAction, renameID, oldDirPrefix string) {
+	action.SourceID = renameID
 	if isPathFileID(renameID) {
 		action.SourceID = renamedPathID(renameID, action.TargetName)
-	} else {
-		action.SourceID = renameID
 	}
 	if oldDirPrefix != "" {
 		e.remapPathPrefix(oldDirPrefix, action.SourceID)
@@ -515,10 +478,6 @@ func (e *Executor) postMoveRename(action *moplan.PlanAction, targetParentID stri
 	action.Status = "done"
 	action.ResolvedID = action.SourceID
 	action.ExecutedAt = nowStr()
-	e.incStat("relocated")
-	e.invalidateDirCache(targetParentID)
-	e.log(fmt.Sprintf("[执行] 整理 %s → %s", current.Name, action.TargetName))
-	return nil
 }
 
 func (e *Executor) execEnsureDir(action *moplan.PlanAction) error {
@@ -545,7 +504,6 @@ func (e *Executor) execEnsureDir(action *moplan.PlanAction) error {
 	action.Status = "done"
 	action.ResolvedID = item.ID
 	e.resolved[action.ID] = item.ID
-	e.incStat("ensured_dirs")
 	e.invalidateDirCache(parentID)
 	e.log(fmt.Sprintf("[执行] 创建目录 %s → %s", action.TargetName, item.ID))
 	return nil
@@ -569,7 +527,6 @@ func (e *Executor) execMoveAndRenameDir(action *moplan.PlanAction) error {
 		action.ResolvedID = existing
 		e.resolved[action.ID] = existing
 		if promotedFromTVTree {
-			e.incStat("ensured_dirs")
 			e.log(fmt.Sprintf("[执行] 目标已存在「%s」，独立电影将搬入该目录（源：%s）", targetName, sourceLabel))
 		} else {
 			e.log(fmt.Sprintf("[执行] 目标已存在「%s」，复用现有目录", targetName))
@@ -585,7 +542,6 @@ func (e *Executor) execMoveAndRenameDir(action *moplan.PlanAction) error {
 		action.Status = "done"
 		action.ResolvedID = folderID
 		e.resolved[action.ID] = folderID
-		e.incStat("ensured_dirs")
 		return nil
 	}
 
@@ -626,7 +582,6 @@ func (e *Executor) execMoveAndRenameDir(action *moplan.PlanAction) error {
 	action.Status = "done"
 	action.ResolvedID = finalID
 	e.resolved[action.ID] = finalID
-	e.incStat("ensured_dirs")
 	e.log(fmt.Sprintf("[执行] 整体搬运目录「%s」→「%s」", sourceLabel, targetName))
 	return nil
 }
@@ -635,7 +590,6 @@ func (e *Executor) execDeleteEmptyDir(action *moplan.PlanAction) error {
 	dirID := action.SourceID
 	if dirID == "" {
 		action.Status = "skipped"
-		e.incStat("skipped")
 		return nil
 	}
 	parentID := action.SourceParentID
@@ -646,7 +600,6 @@ func (e *Executor) execDeleteEmptyDir(action *moplan.PlanAction) error {
 	items, err := e.listDir(dirID, true)
 	if err != nil {
 		action.Status = "skipped"
-		e.incStat("skipped")
 		return nil
 	}
 	if len(items) == 0 {
@@ -656,14 +609,12 @@ func (e *Executor) execDeleteEmptyDir(action *moplan.PlanAction) error {
 		items, err = e.listDir(dirID, true)
 		if err != nil {
 			action.Status = "skipped"
-			e.incStat("skipped")
 			return nil
 		}
 	}
 	if len(items) > 0 {
 		action.Status = "skipped"
 		action.Error = fmt.Sprintf("目录非空（%d 项）", len(items))
-		e.incStat("skipped")
 		e.log(fmt.Sprintf("[执行] 跳过删除 %s: 目录非空（%d 项）", action.SourceName, len(items)))
 		return nil
 	}
@@ -837,7 +788,6 @@ func (e *Executor) renameMetaFile(fileID, oldName, newName, parentID string) err
 	if err := e.files.RenameFile(e.ctx, e.accountID, fileID, newName, parentID); err != nil {
 		return err
 	}
-	e.incStat("renamed_meta")
 	e.log(fmt.Sprintf("[执行] 元数据: %s → %s", oldName, newName))
 	return nil
 }
@@ -1001,15 +951,6 @@ func metaStr(m map[string]any, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprint(m[key]))
-}
-
-func metaInt(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	default:
-		return 0
-	}
 }
 
 func metaBool(m map[string]any, key string) bool {

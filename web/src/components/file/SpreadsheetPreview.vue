@@ -445,19 +445,6 @@ onUnmounted(() => {
 .sheet-preview__grid tbody tr:nth-child(even) td { background: rgb(255 255 255 / 1.5%); }
 .sheet-preview__grid tbody td:hover { background: rgb(39 122 226 / 12%); }
 
-
-
-
-.sheet-preview__error button {
-  margin-top: 5px;
-  padding: 8px 15px;
-  border: 1px solid rgb(91 160 247 / 26%);
-  border-radius: var(--radius-sm);
-  background: rgb(43 126 230 / 18%);
-  font-size: 12px;
-}
-
-
 @media (max-width: 760px) {
   .sheet-preview__toolbar {
     height: 96px;

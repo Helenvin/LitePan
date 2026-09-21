@@ -30,7 +30,6 @@ import {
   updateMediaOrganizePlanAction,
   updateMediaOrganizeTask,
   type MediaOrganizeLogEntry,
-  type MediaOrganizePlan,
   type MediaOrganizePlanAction,
   type MediaOrganizeProgress,
   type MediaOrganizeTask,
@@ -72,6 +71,7 @@ import {
 } from "@/utils/tmdbHit";
 import { confirm } from "@/composables/useConfirm";
 import { toast } from "@/composables/useToast";
+import { runTmdbTest } from "@/composables/useTmdbTest";
 import { useAccountsStore } from "@/stores/accounts";
 import { formatRelativeTimeAgo } from "@/utils/format";
 import "@/styles/admin-shared.css";
@@ -188,6 +188,24 @@ const aiProgressDetail = computed(() => {
 });
 
 const preview = useOrganizePlanPreview();
+
+// 计划为空时区分「目录没扫到」和「没有可整理的媒体」。
+const failedScanDirNames = computed(() =>
+  preview.scanFailed.value
+    .slice(0, 3)
+    .map((f) => f.name || f.id)
+    .join("、"),
+);
+const emptyPlanDescription = computed(() => {
+  const failed = preview.scanFailed.value.length;
+  if (failed > 0) {
+    return `有 ${failed} 个目录扫描失败，结果可能不完整；请检查账号状态后重新生成`;
+  }
+  if (preview.scannedDirs.value > 0) {
+    return `已扫描 ${preview.scannedDirs.value} 个目录，未发现可整理的媒体文件；请确认目标目录选对了、且里面确实有视频文件`;
+  }
+  return "点击「重新生成」让程序扫描目录并生成新的计划";
+});
 
 const matchOpen = ref(false);
 const matchTarget = ref<PlanNeedsMatch | null>(null);
@@ -736,6 +754,21 @@ function stopAIWaitTimer() {
   aiClock.value = Date.now();
 }
 
+async function runPlanGeneration(taskId: string, successMessage = "", errorMessage = "计划生成失败") {
+  planLoading.value = true;
+  startPlanProgressPolling(taskId);
+  try {
+    const result = await planMediaOrganizeTask(taskId);
+    preview.loadPlan(result.plan);
+    if (successMessage) toast.success(successMessage);
+  } catch (e) {
+    toast.error(getApiErrorMessage(e, errorMessage));
+  } finally {
+    stopPlanProgressPolling();
+    planLoading.value = false;
+  }
+}
+
 async function previewPlan(task: MediaOrganizeTask) {
   planTaskId.value = task.id;
   planTaskName.value = task.task_name;
@@ -743,41 +776,19 @@ async function previewPlan(task: MediaOrganizeTask) {
   planOpen.value = true;
   planLoading.value = true;
   try {
-    let existing: MediaOrganizePlan | null = null;
-    try {
-      existing = await fetchMediaOrganizePlan(task.id);
-    } catch {
-      existing = null;
-    }
+    const existing = await fetchMediaOrganizePlan(task.id).catch(() => null);
     if (existing && ((existing.actions?.length ?? 0) > 0 || (existing.skipped?.length ?? 0) > 0)) {
       preview.loadPlan(existing);
       return;
     }
-    startPlanProgressPolling(task.id);
-    const result = await planMediaOrganizeTask(task.id);
-    preview.loadPlan(result.plan);
-  } catch (e) {
-    toast.error(getApiErrorMessage(e, "计划生成失败"));
   } finally {
-    stopPlanProgressPolling();
     planLoading.value = false;
   }
+  await runPlanGeneration(task.id);
 }
 
 async function refreshPlan() {
-  if (!planTaskId.value) return;
-  planLoading.value = true;
-  startPlanProgressPolling(planTaskId.value);
-  try {
-    const result = await planMediaOrganizeTask(planTaskId.value);
-    preview.loadPlan(result.plan);
-    toast.success("计划已重新生成");
-  } catch (e) {
-    toast.error(getApiErrorMessage(e, "生成失败"));
-  } finally {
-    stopPlanProgressPolling();
-    planLoading.value = false;
-  }
+  if (planTaskId.value) await runPlanGeneration(planTaskId.value, "计划已重新生成", "生成失败");
 }
 
 function closePlanDialog() {
@@ -811,11 +822,7 @@ async function applyPlan() {
 async function testTmdb() {
   tmdbTesting.value = true;
   try {
-    const result = await testMediaOrganizeTmdb();
-    if (result.ok) toast.success("TMDB 连通正常");
-    else toast.error("TMDB 不可达");
-  } catch (e) {
-    toast.error(getApiErrorMessage(e, "TMDB 测试失败"));
+    await runTmdbTest(() => testMediaOrganizeTmdb());
   } finally {
     tmdbTesting.value = false;
   }
@@ -1192,6 +1199,17 @@ defineExpose({
 
       <template v-else>
         <div
+          v-if="preview.scanFailed.value.length"
+          class="organize-plan-tmdb-banner"
+        >
+          <span>
+            有 {{ preview.scanFailed.value.length }} 个目录扫描失败，本次计划可能不完整：
+            {{ failedScanDirNames }}
+            <template v-if="preview.scanFailed.value.length > 3">等</template>
+            —— 请检查账号状态与目录是否仍然存在，然后重新生成。
+          </span>
+        </div>
+        <div
           v-if="preview.tmdbStatus.value === 'disabled_task'"
           class="organize-plan-tmdb-banner organize-plan-tmdb-banner--info"
         >
@@ -1246,7 +1264,7 @@ defineExpose({
             v-if="!preview.groups.value.length"
             icon="hand-list"
             title="当前没有可执行的计划"
-            description="点击「重新生成」让程序扫描目录并生成新的计划"
+            :description="emptyPlanDescription"
           />
           <div v-else class="organize-plan-list">
             <div

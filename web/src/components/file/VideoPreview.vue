@@ -773,15 +773,9 @@ onUnmounted(() => {
 .video-preview__loading,
 .video-preview__error {
   position: fixed;
-  left: 50%;
   top: 48%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 13px 17px;
   border: 1px solid rgb(255 255 255 / 15%);
-  border-radius: var(--radius-control);
   background: rgb(3 11 25 / 88%);
   box-shadow: 0 18px 55px rgb(0 0 0 / 36%);
 }

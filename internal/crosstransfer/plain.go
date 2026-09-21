@@ -12,8 +12,7 @@ import (
 	"litepan/internal/upload"
 )
 
-// EnqueuePlainInput 跨盘普传入队参数：不做秒传指纹探测，源目录文件直接
-// 以「下载到服务器临时目录 → 上传目标盘」的持久化 relay 任务整批入队。
+// EnqueuePlainInput 跨盘普传入队参数：不探测秒传指纹，源文件按「下载到临时目录再上传目标盘」的 relay 任务入队。
 type EnqueuePlainInput struct {
 	SourceAccountID   int64
 	SourceAccountName string
@@ -27,8 +26,7 @@ type EnqueuePlainInput struct {
 	Conflict          string
 }
 
-// EnqueuePlainResult 入队汇总；失败原因只在 Message/FailedSample 简要说明，
-// 明细可到任务面板按任务查看。
+// EnqueuePlainResult 入队汇总，失败原因只给简要说明，明细到任务面板查看。
 type EnqueuePlainResult struct {
 	BatchID       string `json:"batch_id,omitempty"`
 	Enqueued      int    `json:"enqueued"`
@@ -40,9 +38,8 @@ type EnqueuePlainResult struct {
 	FailedMessage string `json:"failed_message,omitempty"`
 }
 
-// EnqueuePlain 对每个源目录递归枚举文件（目录/文件数上限与秒传扫描一致），
-// 按源相对结构在目标目录下建镜像目录，再按同名策略创建 relay 上传任务。
-// 入队即返回：任务由 upload.Manager 持久化执行，不依赖浏览器连接。
+// EnqueuePlain 递归枚举各源目录（上限同秒传扫描），按源结构在目标目录建镜像目录并创建 relay 上传任务；
+// 入队即返回，任务由 upload.Manager 持久化执行，不依赖浏览器连接。
 func (s *Service) EnqueuePlain(ctx context.Context, in EnqueuePlainInput) (*EnqueuePlainResult, error) {
 	return s.enqueuePlain(ctx, in, nil)
 }
@@ -232,12 +229,7 @@ type plainListOutcome struct {
 	err   error
 }
 
-// enumeratePlainSources BFS 递归枚举源目录文件（不解析指纹），
-// 目录/文件/深度上限与秒传扫描一致；目录用并发批次列举。
-func (s *Service) enumeratePlainSources(ctx context.Context, sourceAccountID int64, roots []ScanRoot) (*plainScan, error) {
-	return s.enumeratePlainSourcesProgress(ctx, sourceAccountID, roots, nil)
-}
-
+// enumeratePlainSourcesProgress BFS 枚举源目录文件，progress 回传进度，上限与秒传扫描一致。
 func (s *Service) enumeratePlainSourcesProgress(ctx context.Context, sourceAccountID int64, roots []ScanRoot, progress func(int, int) error) (*plainScan, error) {
 	acc := &plainScan{}
 	queue := make([]plainScanNode, 0, len(roots))
@@ -266,12 +258,10 @@ func (s *Service) enumeratePlainSourcesProgress(ctx context.Context, sourceAccou
 		outcomes := make([]plainListOutcome, len(batch))
 		var wg sync.WaitGroup
 		for i, node := range batch {
-			wg.Add(1)
-			go func(idx int, n plainScanNode) {
-				defer wg.Done()
-				items, err := s.files.List(ctx, sourceAccountID, n.id, false)
-				outcomes[idx] = plainListOutcome{node: n, items: items, err: err}
-			}(i, node)
+			wg.Go(func() {
+				items, err := s.files.List(ctx, sourceAccountID, node.id, false)
+				outcomes[i] = plainListOutcome{node: node, items: items, err: err}
+			})
 		}
 		wg.Wait()
 

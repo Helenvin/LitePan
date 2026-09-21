@@ -63,7 +63,6 @@ func wireServices(cfg config.Config, logs *logx.Manager, st *storeBundle, core *
 	playbackSvc := playback.NewService(core.exec, core.cache)
 	playbackSvc.SetLogger(logs.For(logx.ModuleSystem))
 	strmSvc, coord := wireSTRM(st, fileSvc, playbackSvc, core.bus, logs, cfg.DataDir, cfg.StrmDir, cfg.ListenAddr, core.secret)
-	core.strm = coord
 	retentionSvc, retentionCoord := wireCacheRetention(st, fileSvc, core.cache, core.bus, logs)
 	aiOrganizeSvc := aiorganize.New(st.settings)
 	classifyOrganizeSvc := classifyorganize.New(st.settings)
@@ -197,6 +196,7 @@ func wireServices(cfg config.Config, logs *logx.Manager, st *storeBundle, core *
 		StrmScrape: strmScrapeSvc,
 		Organize:   mediaOrganizeSvc,
 		Emby:       embyProxySvc,
+		Fnos:       fnosProxySvc,
 		Files:      fileSvc,
 		Log:        logs.For(logx.ModuleSystem),
 	})

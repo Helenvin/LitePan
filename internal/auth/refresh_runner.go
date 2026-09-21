@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"litepan/internal/domain"
 	"litepan/internal/driver"
@@ -87,8 +89,10 @@ func (s *Service) onCredentialsPersisted(ctx context.Context, accountID int64) {
 		return
 	}
 	s.applyAccountSchedule(ctx, accountID, st)
-	name := s.accountName(ctx, accountID)
-	s.log.Info("请求链路触发认证凭证回写", "account_id", accountID, "account", name)
+	name, driverType := s.accountLabel(ctx, accountID)
+	nextCheck := formatSchedTime(s.calcNextCheck(ctx, accountID, time.Now(), false))
+	s.log.Info(fmt.Sprintf("账号 %s 请求链路自动续期成功，下次检查 %s", scheduleLabel(name, driverType), nextCheck),
+		"account_id", accountID, "account", name, "driver", driverType, "next_check", nextCheck)
 	_ = s.markSuccess(ctx, accountID, st, true)
 }
 

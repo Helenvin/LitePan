@@ -169,7 +169,6 @@ func (m *metadataSyncer) syncFiles(ctx context.Context, accountID int64, root st
 		select {
 		case jobs <- metadataDownloadJob{group: group, resolved: resolved}:
 		case <-ctx.Done():
-			break
 		}
 	}
 	close(jobs)

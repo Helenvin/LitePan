@@ -29,8 +29,7 @@ func IsSeasonDirName(name string) bool {
 	return ParseSeasonDirNumber(name) != nil
 }
 
-// IsSingleSeasonShowDir 判断"片名.第X季 / 片名.Season X"这类单季作品根目录：
-// 目录同时携带季信息与独立剧集标题，应作为作品根处理，而不是被当成季子目录跳过。
+// IsSingleSeasonShowDir 判断"片名.第X季"这类单季作品根目录，它应作为作品根而非季子目录。
 func IsSingleSeasonShowDir(name string) bool {
 	best := seasonInfoStart(name)
 	if best <= 0 {
@@ -40,13 +39,13 @@ func IsSingleSeasonShowDir(name string) bool {
 	if title == "" {
 		return false
 	}
-	if IsGenericMediaDir(title) || isCollectionContainerDir(title, nil) || isSpecialContentDirName(title) {
+	if IsGenericMediaDir(title) || isCollectionContainerDir(title) || isSpecialContentDirName(title) {
 		return false
 	}
 	return len([]rune(title)) >= 2
 }
 
-// SingleSeasonShowDirTitle 返回单季作品根中季信息之前的干净剧集标题（如「脱口秀和Ta的朋友们.第二季…」→「脱口秀和Ta的朋友们」）。
+// SingleSeasonShowDirTitle 返回单季作品根中季信息之前的干净剧集标题。
 func SingleSeasonShowDirTitle(name string) string {
 	best := seasonInfoStart(name)
 	if best <= 0 {
@@ -70,13 +69,9 @@ func seasonInfoStart(name string) int {
 
 var explicitSeasonTokenRe = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:s\d{1,3}e\d{1,4}|\d{1,3}\s*x\s*\d{1,4}|season\s*\d{1,3})|第\s*(?:\d{1,3}|[零〇一二两三四五六七八九十百]+)\s*季`)
 
-// 显式季号优先于解析默认 Season=1
+// HasExplicitSeasonToken 判断名称里是否带显式季号（优先于解析默认 Season=1）。
 func HasExplicitSeasonToken(name string) bool {
 	return explicitSeasonTokenRe.MatchString(name)
-}
-
-func LooksLikeTVFile(parsed ParsedMedia, ancestors []Ancestor) RuleResult {
-	return LooksLikeTVFileWithName(parsed, ancestors, "")
 }
 
 func LooksLikeTVFileWithName(parsed ParsedMedia, ancestors []Ancestor, fileName string) RuleResult {
@@ -120,7 +115,7 @@ func PickTVShowInfo(ancestors []Ancestor, fileParsed ParsedMedia) (showDirID, sh
 	for idx := len(ancestors) - 1; idx >= 0; idx-- {
 		dir := ancestors[idx]
 		if IsGenericMediaDir(dir.Name) || (IsSeasonDirName(dir.Name) && !IsSingleSeasonShowDir(dir.Name)) || IsEpisodeRangeDirName(dir.Name) ||
-			isCollectionContainerDir(dir.Name, nil) || isStructuralSpecialDirName(dir.Name) {
+			isCollectionContainerDir(dir.Name) || isStructuralSpecialDirName(dir.Name) {
 			continue
 		}
 		if looksLikeStandaloneMovieDir(dir.Name) {
@@ -189,7 +184,7 @@ func isStructuralSpecialDirName(name string) bool {
 	return isSpecialContentDirName(name) && !looksLikeStandaloneMovieDir(name)
 }
 
-func isCollectionContainerDir(name string, childDirNames []string) bool {
+func isCollectionContainerDir(name string) bool {
 	raw := strings.TrimSpace(name)
 	if raw == "" {
 		return false
@@ -197,27 +192,11 @@ func isCollectionContainerDir(name string, childDirNames []string) bool {
 	if LooksLikeSceneMovieRelease(raw) {
 		return false
 	}
-	dirParsed := NormalizeParsedMedia(ParseDirName(raw))
-	title := strings.TrimSpace(dirParsed.Title)
-	if title != "" && ScoreTitleForTMDB(title) >= 0.45 {
-		if !collectionContainerStrongHintRe.MatchString(raw) {
-			return false
-		}
-	}
 	if collectionContainerHintRe.MatchString(raw) {
 		return true
 	}
-	if len(childDirNames) > 0 {
-		seasonCount := 0
-		for _, child := range childDirNames {
-			if IsSeasonDirName(child) {
-				seasonCount++
-			}
-		}
-		if seasonCount >= 2 {
-			return true
-		}
-	}
+	// 形如「一季」「2季」「前3季」的纯季名目录只是季范围容器，不是作品名。
+	title := strings.TrimSpace(NormalizeParsedMedia(ParseDirName(raw)).Title)
 	if seasonRangeTitleRe.MatchString(title) {
 		return true
 	}
@@ -230,7 +209,7 @@ func looksLikeStandaloneMovieDir(name string) bool {
 		return false
 	}
 	if IsGenericMediaDir(raw) || IsSeasonDirName(raw) || IsEpisodeRangeDirName(raw) ||
-		isCollectionContainerDir(raw, nil) {
+		isCollectionContainerDir(raw) {
 		return false
 	}
 	dirParsed := NormalizeParsedMedia(ParseDirName(raw))
@@ -261,9 +240,8 @@ func looksLikeStandaloneMovieDir(name string) bool {
 	return ScoreTitleForTMDB(title) >= 0.45
 }
 
-// FileNameCarriesShowIdentity 判断番外/特别篇目录里的文件名是否包含祖先剧集名。
-// 用于"文件名没写集号但明显属于某剧集的番外"场景：归入剧集 Season 00 而非独立电影。
-// 剧场版/映画等明确电影暗示、或带 TMDB ID 的目录，仍按独立电影处理。
+// FileNameCarriesShowIdentity 判断番外/特别篇目录里的文件名是否含祖先剧集名，用于归入剧集 Season 00 而非独立电影；
+// 剧场版/映画等明确电影暗示或带 TMDB ID 的目录仍按独立电影处理。
 func FileNameCarriesShowIdentity(name string, ancestors []Ancestor) bool {
 	if name == "" || len(ancestors) == 0 {
 		return false
@@ -291,7 +269,7 @@ func FileNameCarriesShowIdentity(name string, ancestors []Ancestor) bool {
 	for i := len(ancestors) - 1; i >= 0; i-- {
 		dir := ancestors[i]
 		if IsGenericMediaDir(dir.Name) || IsSeasonDirName(dir.Name) || IsEpisodeRangeDirName(dir.Name) ||
-			isCollectionContainerDir(dir.Name, nil) || isSpecialContentDirName(dir.Name) {
+			isCollectionContainerDir(dir.Name) || isSpecialContentDirName(dir.Name) {
 			continue
 		}
 		showKey := strongTMDBTitleKey(dir.Name)
@@ -310,12 +288,14 @@ func IsStandaloneMovieDirName(name string) bool {
 }
 
 var (
-	specialContentDirRe             = regexpMust(`(?:^|[\s._\-（(【\[])(?:番外篇?|特别篇|特別篇|前传|后传|外传|OVA|OAD|SP|Side Story|Specials?)(?:[\s._\-）)】\]\']|$)`)
-	collectionContainerHintRe       = regexpMust(`(?i)(?:\+|＋|/|(?:前?第?[一二三四五六七八九十\d]+季[与和]|[与和]前?第?[一二三四五六七八九十\d]+季|季[与和][前第]?[一二三四五六七八九十\d]+)|打包|合集|全集|全季|各季|前几季|前五季|前\d+季|番外.*剧场|剧场.*番外|番外\+|\+番外|季\+|\+季|多季|seasons?\s*[\+\&]|extras?\s*[\+\&])`)
-	collectionContainerStrongHintRe = collectionContainerHintRe
-	seasonRangeTitleRe              = regexpMust(`^前?[一二三四五六七八九十\d]+季$`)
-	standaloneMovieDirHintRe        = regexpMust(`(?i)(?:剧场版|映画|电影版|大电影|院线版|Movie\s*Edition)`)
-	seasonOnlyTitleRe               = regexpMust(`(?i)^第\s*\d{1,3}\s*季$`)
+	specialContentDirRe = regexpMust(`(?:^|[\s._\-（(【\[])(?:番外篇?|特别篇|特別篇|前传|后传|外传|OVA|OAD|SP|Side Story|Specials?)(?:[\s._\-）)】\]\']|$)`)
+	// 合集容器目录：命中即视为「装多部作品的容器」，不再当成单个作品名。
+	// 前半段关键字出现在名字任意位置即算；结尾那组只认「名字结尾」，
+	// 避免把「007系列：无暇赴死」这类单片片名误判成合集。
+	collectionContainerHintRe = regexpMust(`(?i)(?:\+|＋|/|(?:前?第?[一二三四五六七八九十\d]+季[与和]|[与和]前?第?[一二三四五六七八九十\d]+季|季[与和][前第]?[一二三四五六七八九十\d]+)|打包|合集|全集|全季|各季|前几季|前五季|前\d+季|番外.*剧场|剧场.*番外|番外\+|\+番外|季\+|\+季|多季|seasons?\s*[\+\&]|extras?\s*[\+\&]|(?:系列|大全|汇总|[二三四五六七八九十两\d]+部曲)\s*$)`)
+	seasonRangeTitleRe        = regexpMust(`^前?[一二三四五六七八九十\d]+季$`)
+	standaloneMovieDirHintRe  = regexpMust(`(?i)(?:剧场版|映画|电影版|大电影|院线版|Movie\s*Edition)`)
+	seasonOnlyTitleRe         = regexpMust(`(?i)^第\s*\d{1,3}\s*季$`)
 )
 
 func regexpMust(pattern string) *regexp.Regexp {

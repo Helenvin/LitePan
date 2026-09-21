@@ -543,18 +543,9 @@ onUnmounted(() => {
 
 .pdf-preview__state {
   position: fixed;
-  left: 50%;
   top: 48%;
   z-index: 10;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 18px;
-  border: 1px solid rgb(255 255 255 / 14%);
-  border-radius: var(--radius-control);
   background: rgb(5 14 28 / 90%);
-  box-shadow: 0 18px 55px rgb(0 0 0 / 34%);
 }
 
 .pdf-preview__password,

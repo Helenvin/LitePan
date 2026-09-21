@@ -28,19 +28,10 @@ func MediaStem(name string) string {
 }
 
 func SafeName(name string) string {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "_"
-	}
-	name = strmSafeNameRepl.Replace(name)
-	if name == "" || name == "." || name == ".." {
-		return "_"
-	}
-	return name
+	return SafeStem(strings.TrimSpace(name))
 }
 
-// SafeStem 保留 STEM 前后空格，只替换非法字符；全空白 / 空串 / 点目录名兜底为 _。
-// 用于 STRM 文件名，保证「飞驰人生 .mp4」这类文件名生成的 STRM 保留扩展名前的空格。
+// SafeStem 保留 STEM 前后空格，只替换非法字符，全空白/空串/点目录名兜底为 _。
 func SafeStem(name string) string {
 	if strings.TrimSpace(name) == "" {
 		return "_"
@@ -52,8 +43,7 @@ func SafeStem(name string) string {
 	return name
 }
 
-// SafeDirSegments 把相对目录字符串拆成安全目录段：
-// 容错前后斜杠与反斜杠、压缩空段，并跳过 "." 与 ".."。
+// SafeDirSegments 把相对目录拆成安全目录段，容错前后斜杠与反斜杠并跳过 "." 和 ".."。
 func SafeDirSegments(raw string) []string {
 	raw = strings.ReplaceAll(strings.TrimSpace(raw), "\\", "/")
 	raw = strings.Trim(raw, "/")
@@ -176,7 +166,7 @@ func DeleteTaskOutput(strmDir, outputFolder string) error {
 	return os.RemoveAll(dir)
 }
 
-// removeStrmScrapeIndex 删除 STRM 刮削海报墙索引（与 strmscrape.TaskIndexPath 约定一致）。
+// removeStrmScrapeIndex 删除 STRM 刮削海报墙索引，路径与 strmscrape.TaskIndexPath 一致。
 func removeStrmScrapeIndex(dataDir string, taskID int64) {
 	base := filepath.Join(strings.TrimSpace(dataDir), "strmscrape", strconv.FormatInt(taskID, 10)+".sqlite")
 	for _, p := range []string{base, base + "-wal", base + "-shm"} {

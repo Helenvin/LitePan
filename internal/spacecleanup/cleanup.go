@@ -26,8 +26,7 @@ func (s *Service) Cleanup(ctx context.Context, req CleanupRequest) (CleanupRepor
 		delete(s.scans, scanID)
 	}
 	s.mu.Unlock()
-	// 报告长期保留（不因“新鲜期”过期而拒绝）：删除前的安全性由各清理项的二次复核保证
-	// （重新核对任务占用、路径存在性、symlink 与类型），因此旧报告也可安全执行。
+	// 报告长期保留，过期也允许执行：删除前各清理项会二次复核任务占用、路径、symlink 与类型。
 	if !ok {
 		return CleanupReport{}, domain.Errorf(domain.CodeValidation, "扫描结果不存在，请重新扫描")
 	}
@@ -211,23 +210,7 @@ func (s *Service) cleanupSystemFile(item planItem) (CleanupItemResult, error) {
 	if !isSystemJunk(filepath.Base(path)) || (!pathWithin(s.opts.DataDir, path) && !pathWithin(s.opts.StrmDir, path)) {
 		return result, fmt.Errorf("系统杂项路径无效")
 	}
-	info, err := os.Lstat(path)
-	if os.IsNotExist(err) {
-		result.Status, result.Message = "skipped", "文件已不存在"
-		return result, nil
-	}
-	if err != nil {
-		return result, err
-	}
-	if !info.Mode().IsRegular() {
-		result.Status, result.Message = "skipped", "目标不再是普通文件"
-		return result, nil
-	}
-	if err := os.Remove(path); err != nil {
-		return result, err
-	}
-	result.Status, result.FreedBytes, result.Files = "cleaned", info.Size(), 1
-	return result, nil
+	return removeRegularFile(result, path)
 }
 
 func (s *Service) cleanupScrapeIndex(ctx context.Context, item planItem) (CleanupItemResult, error) {

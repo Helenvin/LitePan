@@ -59,6 +59,53 @@ func (h *Handler) testFnosConfig(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, map[string]any{"ok": true})
 }
 
+func (h *Handler) updateFnosManagement(w http.ResponseWriter, r *http.Request) {
+	if h.fnosProxy == nil {
+		writeErr(w, domain.Errf(domain.CodeNotImplement))
+		return
+	}
+	var in fnosproxy.ManagementUpdateRequest
+	if err := decodeJSON(r, &in); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := h.fnosProxy.UpdateManagement(r.Context(), in); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeOK(w, h.fnosProxy.Snapshot(r))
+}
+
+func (h *Handler) testFnosManagement(w http.ResponseWriter, r *http.Request) {
+	if h.fnosProxy == nil {
+		writeErr(w, domain.Errf(domain.CodeNotImplement))
+		return
+	}
+	var in fnosproxy.ManagementUpdateRequest
+	if err := decodeJSON(r, &in); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := h.fnosProxy.TestManagement(r.Context(), in); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeOK(w, map[string]any{"ok": true})
+}
+
+func (h *Handler) listFnosLibraries(w http.ResponseWriter, r *http.Request) {
+	if h.fnosProxy == nil {
+		writeErr(w, domain.Errf(domain.CodeNotImplement))
+		return
+	}
+	data, err := h.fnosProxy.ListLibraries(r.Context())
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeOK(w, data)
+}
+
 func fnosSettingsTouched(changed map[string]string) bool {
 	for _, key := range []string{
 		settings.KeyFnosEnabled,
@@ -67,6 +114,8 @@ func fnosSettingsTouched(changed map[string]string) bool {
 		settings.KeyFnosProxyPort,
 		settings.KeyFnosStrmPathMaps,
 		settings.KeyFnosDirectSTRMClients,
+		settings.KeyFnosAdminUsername,
+		settings.KeyFnosAdminPassword,
 	} {
 		if _, ok := changed[key]; ok {
 			return true

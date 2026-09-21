@@ -3,12 +3,14 @@ package cache
 import (
 	"container/list"
 	"context"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"litepan/pkg/safego"
 	"litepan/pkg/singleflight"
 )
 
@@ -29,6 +31,7 @@ type Service struct {
 	sf    singleflight.Group[any]
 	fence mutationFence
 
+	log  *slog.Logger
 	stop chan struct{}
 	once sync.Once
 
@@ -61,17 +64,23 @@ type Options struct {
 	MaxItems   int           // 条数上限（主约束），<=0 不限
 	MemLimit   int64         // 字节软上限（辅约束），<=0 不限
 	GCInterval time.Duration // 过期清理间隔，<=0 用默认 1 分钟
+	Log        *slog.Logger  // 后台任务日志，nil 时退回 slog.Default()
 }
 
 func NewService(opts Options) *Service {
 	if opts.GCInterval <= 0 {
 		opts.GCInterval = time.Minute
 	}
+	log := opts.Log
+	if log == nil {
+		log = slog.Default()
+	}
 	s := &Service{
 		ll:       list.New(),
 		items:    make(map[string]*list.Element),
 		maxItems: opts.MaxItems,
 		memLimit: opts.MemLimit,
+		log:      log,
 		stop:     make(chan struct{}),
 	}
 	go s.gcLoop(opts.GCInterval)
@@ -351,7 +360,8 @@ func (s *Service) gcLoop(interval time.Duration) {
 	for {
 		select {
 		case <-t.C:
-			s.sweepExpired()
+			// 兜住单轮崩溃：清理出错只跳过这一轮，不能让整个服务下线。
+			safego.Guard(s.log, "cache.gc", s.sweepExpired)
 		case <-s.stop:
 			return
 		}
@@ -359,18 +369,5 @@ func (s *Service) gcLoop(interval time.Duration) {
 }
 
 func (s *Service) sweepExpired() {
-	now := time.Now()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var expired []*list.Element
-	for _, el := range s.items {
-		en := el.Value.(*entry)
-		if !en.expiresAt.IsZero() && now.After(en.expiresAt) {
-			expired = append(expired, el)
-		}
-	}
-	for _, el := range expired {
-		s.removeElement(el)
-		s.expirations.Add(1)
-	}
+	_, _ = s.SweepExpired()
 }

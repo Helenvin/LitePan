@@ -115,7 +115,7 @@ const workspaceFields = computed<ProxyField[]>(() => {
       { value: "proxy_list", label: "代理名单" },
     ],
     helpTitle: "客户端分流",
-    helpBody: "直连名单：名单里的播放器走夸克 TV，其他走本机代理。<br>代理名单：名单里的播放器走本机代理，其他走夸克 TV。<br>多个名称用分号分隔，不区分大小写。Emby 等由服务端 FFmpeg 拉流时，无法识别原播放器名称。",
+    helpBody: "直连名单：名单里的播放器走夸克 TV，其他走本机代理。<br>代理名单：名单里的播放器走本机代理，其他走夸克 TV。<br>多个名称用分号分隔，不区分大小写。Emby/Jellyfin 等由服务端 FFmpeg 拉流时，无法识别原播放器名称。",
     placeholder: "例如：vidhub",
     hidden: qtvForm.play_mode !== "split",
   });

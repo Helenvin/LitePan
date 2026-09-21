@@ -109,10 +109,10 @@ func (u *uploadHandle) Stat() (os.FileInfo, error) {
 
 type noopUpload struct{}
 
-func (n *noopUpload) Close() error                      { return nil }
-func (n *noopUpload) Read([]byte) (int, error)          { return 0, io.EOF }
-func (n *noopUpload) Write(p []byte) (int, error)       { return len(p), nil }
-func (n *noopUpload) Seek(int64, int) (int64, error)    { return 0, nil }
+func (n *noopUpload) Close() error                       { return nil }
+func (n *noopUpload) Read([]byte) (int, error)           { return 0, io.EOF }
+func (n *noopUpload) Write(p []byte) (int, error)        { return len(p), nil }
+func (n *noopUpload) Seek(int64, int) (int64, error)     { return 0, nil }
 func (n *noopUpload) Readdir(int) ([]os.FileInfo, error) { return nil, io.EOF }
 func (n *noopUpload) Stat() (os.FileInfo, error) {
 	return &nodeInfo{name: ".DS_Store", mode: 0o644}, nil

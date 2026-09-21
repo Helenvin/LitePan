@@ -43,10 +43,4 @@ export type LocalUploadPayload = {
 
 export type UploadRuntimeHooks = {
   startScheduler: () => Promise<void>;
-  fetchTasks: () => Promise<void>;
-  startPolling: () => void;
-  stopPolling: () => void;
-  connectStream: () => void;
-  disconnectStream: () => void;
-  closePanel: () => void;
 };

@@ -3,7 +3,6 @@ import type { Account, AccountPayload } from "./types";
 
 export const accountsApi = {
   list: () => http.get<Account[]>("/admin/accounts"),
-  get: (id: number) => http.get<Account>(`/admin/accounts/${id}`),
   create: (payload: AccountPayload) => http.post<Account>("/admin/accounts", payload),
   update: (id: number, payload: AccountPayload) => http.put<Account>(`/admin/accounts/${id}`, payload),
   remove: (id: number) => http.del<{ id: number }>(`/admin/accounts/${id}`),

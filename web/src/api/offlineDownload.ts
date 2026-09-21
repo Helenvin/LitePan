@@ -71,14 +71,6 @@ export const offlineDownloadApi = {
     });
   },
 
-  refreshTasks(accountId?: number) {
-    return http.post<OfflineDownloadTask[]>(
-      "/files/offline-download/tasks/refresh",
-      undefined,
-      { account_id: accountId },
-    );
-  },
-
   batchDelete(taskIds: string[]) {
     return http.post<OfflineBatchDeleteResult>("/files/offline-download/tasks/batch-delete", {
       task_ids: taskIds,

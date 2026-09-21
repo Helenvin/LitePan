@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+// seasonOnlyRe 匹配“第 N 季/部”这类纯季标题尾部，用于回退标题前缀。
+var seasonOnlyRe = regexp.MustCompile(`(?i)(?:第\s*` + numberPattern + `\s*[季部])\s*$`)
+
 func NormalizeParsedMedia(parsed ParsedMedia) ParsedMedia {
 	result := clearUnreasonableSeason(parsed)
 	result.Season = asFirstInt(result.Season)
@@ -68,9 +71,6 @@ func ApplyEpisodeFallbacks(name string, result map[string]any) map[string]any {
 	normalized := PreprocessDottedFilename(stem)
 	compact := strings.TrimSpace(spaceCollapseRe.ReplaceAllString(normalized, " "))
 
-	seasonEpPatterns := compileEpisodePatterns()
-	episodeOnlyPatterns := compileEpisodeOnlyPatterns()
-
 	var season, episode *int
 	var matchedSpan [2]int
 	hasSpan := false
@@ -85,7 +85,7 @@ func ApplyEpisodeFallbacks(name string, result map[string]any) map[string]any {
 		}
 	}
 
-	for _, re := range seasonEpPatterns {
+	for _, re := range seasonEpisodePatterns {
 		loc := re.FindStringSubmatchIndex(compact)
 		if loc == nil {
 			continue
@@ -163,13 +163,11 @@ func ApplyEpisodeFallbacks(name string, result map[string]any) map[string]any {
 		title := strings.TrimSpace(strVal(parsed["title"]))
 		if hasSpan {
 			titlePrefix := strings.Trim(compact[:matchedSpan[0]], " ._-")
-			seasonOnlyRe := regexp.MustCompile(`(?i)(?:第\s*` + numberPattern + `\s*[季部])\s*$`)
 			titlePrefix = strings.Trim(seasonOnlyRe.ReplaceAllString(titlePrefix, ""), " ._-")
 			if titlePrefix != "" {
 				parsed["title"] = titlePrefix
 			} else if title != "" {
-				fullEpRe := regexp.MustCompile(`(?i)(?:第\s*` + numberPattern + `\s*[季部]\s*)?(?:第\s*` + numberPattern + `\s*[集话話回期]|EP\s*` + numberPattern + `|E\s*` + numberPattern + `)`)
-				if fullEpRe.MatchString(title) {
+				if fullEpisodeRe.MatchString(title) {
 					delete(parsed, "title")
 				}
 			}

@@ -55,6 +55,7 @@ const emit = defineEmits<{
     accountName: string;
     parentId: string;
     path: string;
+    dirs?: string[];
     selections?: FolderSelection[];
   }];
 }>();
@@ -220,6 +221,7 @@ function onResolve(folder: {
   accountId: number;
   parentId: string;
   path: string;
+  dirs?: string[];
   selections?: FolderSelection[];
 }) {
   emit("resolve", { ...folder, accountName: accountName.value });

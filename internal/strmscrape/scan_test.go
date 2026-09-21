@@ -2,7 +2,6 @@ package strmscrape
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -345,7 +344,7 @@ func TestWriteMatchedAddsFanartAndActors(t *testing.T) {
 		settings.KeyStrmScrapeClearLogo: "true",
 		settings.KeyMOTmdbLanguage:      "zh-CN",
 	})}
-	if !workNeedsScrape(works[0], MediaTypeMovie, svc.GetSettings()) {
+	if !workNeedsScrapeFromInspection(works[0], svc.GetSettings(), inspectWork(works[0])) {
 		t.Fatal("已有基础 NFO 和海报时，缺少启用的扩展内容仍应进入补缺")
 	}
 	client := tmdb.NewClient(tmdb.Options{APIKey: "test", APIBaseHost: server.URL, ImageBaseHost: server.URL})
@@ -470,7 +469,7 @@ func TestRootReadySkipsEvenIfEpisodeIncomplete(t *testing.T) {
 	if item.TVState != TVStateEnded {
 		t.Fatalf("tv_state=%s want ended", item.TVState)
 	}
-	if workNeedsScrape(works[0], MediaTypeTV, Settings{}) {
+	if workNeedsScrapeFromInspection(works[0], Settings{}, inspectWork(works[0])) {
 		t.Fatal("no pending + root ready should skip")
 	}
 }
@@ -488,7 +487,7 @@ func TestPendingForcesScrapeAndUpdatingState(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = writePendingState(works[0], scrapeState{Status: PendingUpdating, EpLocal: 1, EpTMDB: 40})
-	if !workNeedsScrape(works[0], MediaTypeTV, Settings{EpisodeInfo: true}) {
+	if !workNeedsScrapeFromInspection(works[0], Settings{EpisodeInfo: true}, inspectWork(works[0])) {
 		t.Fatal("pending must scrape")
 	}
 	item := buildItem(1, root, works[0])
@@ -522,14 +521,11 @@ func TestMarkNormalClearsPending(t *testing.T) {
 	if err := markWorkNormal(works[0], MediaTypeTV); err != nil {
 		t.Fatal(err)
 	}
-	if hasPendingMarker(works[0]) {
-		t.Fatal("pending should be cleared")
-	}
 	item := buildItem(1, root, works[0])
 	if item.Status != ItemStatusOK || item.TVState != TVStateEnded {
 		t.Fatalf("status=%s tv_state=%s", item.Status, item.TVState)
 	}
-	if workNeedsScrape(works[0], MediaTypeTV, Settings{}) {
+	if workNeedsScrapeFromInspection(works[0], Settings{}, inspectWork(works[0])) {
 		t.Fatal("after mark normal should skip")
 	}
 }
@@ -547,7 +543,7 @@ func TestManualCompleteSkipsUnmatchedWork(t *testing.T) {
 	if err := writeManualComplete(g, MediaTypeTV); err != nil {
 		t.Fatal(err)
 	}
-	if workNeedsScrape(g, MediaTypeTV, Settings{}) {
+	if workNeedsScrapeFromInspection(g, Settings{}, inspectWork(g)) {
 		t.Fatal("手动完成的未匹配作品不应再次进入自动刮削")
 	}
 	item := buildItem(1, root, g)
@@ -612,11 +608,7 @@ func TestFinalizeKeepsPendingWhenLocalExceedsTMDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = writePendingMarker(works[0])
 	finalizeAfterScrape(works[0], MediaTypeTV, 1, false) // TMDB 只 1 集，本地 3 集
-	if !hasPendingMarker(works[0]) {
-		t.Fatal("short drama should keep pending (miss)")
-	}
 	st, _ := readPendingState(works[0])
 	if st.Status != PendingIncomplete {
 		t.Fatalf("status=%s want incomplete", st.Status)
@@ -644,11 +636,7 @@ func TestFinalizeKeepsPendingWhenUpdating(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = writePendingMarker(works[0])
 	finalizeAfterScrape(works[0], MediaTypeTV, 40, false)
-	if !hasPendingMarker(works[0]) {
-		t.Fatal("updating should keep pending")
-	}
 	st, ok := readPendingState(works[0])
 	if !ok || st.Status != PendingUpdating || st.EpTMDB != 40 {
 		t.Fatalf("pending state=%+v ok=%v", st, ok)
@@ -669,7 +657,6 @@ func TestFinalizeKeepsPendingWhenDoubt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = writePendingMarker(works[0])
 	finalizeAfterScrape(works[0], MediaTypeTV, 1, true)
 	st, ok := readPendingState(works[0])
 	if !ok || st.Status != PendingDoubt || st.EpLocal != 1 || st.EpTMDB != 1 {
@@ -753,22 +740,6 @@ func TestListLocalRegularSeasonNumbersOnlyLocal(t *testing.T) {
 	got := listLocalRegularSeasonNumbers(works[0])
 	if len(got) != 1 || got[0] != 4 {
 		t.Fatalf("seasons=%v want [4]", got)
-	}
-}
-
-func TestSumTMDBSeasonEpisodeCountsLocalSeasonsOnly(t *testing.T) {
-	raw := []json.RawMessage{
-		json.RawMessage(`{"season_number":0,"episode_count":3}`),
-		json.RawMessage(`{"season_number":1,"episode_count":12}`),
-		json.RawMessage(`{"season_number":2,"episode_count":12}`),
-		json.RawMessage(`{"season_number":3,"episode_count":13}`),
-		json.RawMessage(`{"season_number":4,"episode_count":12}`),
-	}
-	if got := sumTMDBSeasonEpisodeCounts(raw, []int{4}); got != 12 {
-		t.Fatalf("got %d want 12", got)
-	}
-	if got := sumTMDBSeasonEpisodeCounts(raw, []int{1, 4}); got != 24 {
-		t.Fatalf("got %d want 24", got)
 	}
 }
 

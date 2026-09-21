@@ -13,6 +13,8 @@ import (
 	"litepan/internal/driver"
 )
 
+const maxPickCodeCacheEntries = 100_000
+
 func normalizeIDs(fileIDs []string) []string {
 	out := make([]string, 0, len(fileIDs))
 	for _, id := range fileIDs {
@@ -115,6 +117,9 @@ func (d *Driver) rememberPickCode(entry fileEntry) {
 	if d.pickBy == nil {
 		d.pickBy = make(map[string]string)
 	}
+	if _, exists := d.pickBy[id]; !exists && len(d.pickBy) >= maxPickCodeCacheEntries {
+		clear(d.pickBy)
+	}
 	d.pickBy[id] = pc
 	d.pickMu.Unlock()
 }
@@ -135,10 +140,20 @@ func (d *Driver) DeleteFiles(ctx context.Context, fileIDs []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
+	var err error
 	if d.deleteMode() == "delete" {
-		return d.permanentDelete(ctx, ids)
+		err = d.permanentDelete(ctx, ids)
+	} else {
+		err = d.trashFiles(ctx, ids)
 	}
-	return d.trashFiles(ctx, ids)
+	if err == nil {
+		d.pickMu.Lock()
+		for _, id := range ids {
+			delete(d.pickBy, id)
+		}
+		d.pickMu.Unlock()
+	}
+	return err
 }
 
 func (d *Driver) trashFiles(ctx context.Context, ids []string) error {

@@ -40,7 +40,7 @@ export interface ProxyWorkspaceItem {
   lastError?: string;
 }
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     open: boolean;
     title: string;
@@ -75,7 +75,7 @@ const props = withDefaults(
     addable?: boolean;
   }>(),
   {
-    namePlaceholder: "例如：家庭 Emby",
+    namePlaceholder: "例如：家庭媒体服务",
     nameEditable: true,
     showEntry: true,
     entryUrl: "",
@@ -282,6 +282,7 @@ function cancelName() {
           <div class="ws-foot">
             <AppButton v-if="showTest" variant="secondary" :disabled="testing" @click="emit('test')">{{ testing ? "测试中…" : "测试连接" }}</AppButton>
             <AppButton v-if="showRefresh" variant="secondary" :disabled="refreshing" @click="emit('refresh')">{{ refreshing ? "刷库中…" : "手动刷库" }}</AppButton>
+            <slot name="footer-actions" />
             <div class="ws-foot__spacer" />
             <AppButton variant="primary" :disabled="saving || saveDisabled" @click="emit('save')">{{ saving ? "保存中…" : saveLabel }}</AppButton>
           </div>

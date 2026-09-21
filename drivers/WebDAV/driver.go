@@ -2,6 +2,7 @@ package webdav
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	"github.com/studio-b12/gowebdav"
@@ -16,6 +17,7 @@ type Driver struct {
 	add Addition
 
 	client *gowebdav.Client
+	probe  *http.Client
 }
 
 var config = driver.Config{
@@ -59,12 +61,19 @@ func (d *Driver) Init(ctx context.Context) error {
 		c.SetTransport(buildTransport(d.add))
 	}
 	d.client = c
+	d.probe = &http.Client{
+		Transport:     buildTransport(d.add),
+		Timeout:       secondsOr(d.add.Timeout, defaultTimeout),
+		CheckRedirect: webDAVRedirectPolicy,
+	}
 	_ = ctx
 	return nil
 }
 
 func (d *Driver) Drop(context.Context) error {
+	httpx.CloseClient(d.probe)
 	d.client = nil
+	d.probe = nil
 	return nil
 }
 

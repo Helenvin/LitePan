@@ -79,16 +79,30 @@ func (s *Service) ValidateRule(ctx context.Context, actions []RuleAction) (Valid
 				mode = "global"
 			}
 			if mode != "global" && mode != "library" {
-				issues = append(issues, ValidationIssue{Level: "error", Message: "Emby 执行范围无效", ActionIndex: index, ActionType: action.Type})
+				issues = append(issues, ValidationIssue{Level: "error", Message: "Emby/Jellyfin 执行范围无效", ActionIndex: index, ActionType: action.Type})
 				continue
 			}
 			if mode == "library" && strings.TrimSpace(anyString(action.Params["library_id"])) == "" {
-				issues = append(issues, ValidationIssue{Level: "error", Message: "请选择 Emby 媒体库", ActionIndex: index, ActionType: action.Type})
+				issues = append(issues, ValidationIssue{Level: "error", Message: "请选择 Emby/Jellyfin 媒体库", ActionIndex: index, ActionType: action.Type})
 				continue
 			}
 			embyID := strings.TrimSpace(anyString(action.Params["emby_id"]))
 			if s.emby == nil || !s.hasEmbyConfig(embyID) {
-				issues = append(issues, ValidationIssue{Level: "error", Message: "所选 Emby 配置不存在", ActionIndex: index, ActionType: action.Type})
+				issues = append(issues, ValidationIssue{Level: "error", Message: "所选 Emby/Jellyfin 配置不存在", ActionIndex: index, ActionType: action.Type})
+			}
+		case domain.AutomationActionFnosScan, domain.AutomationActionFnosRefreshMetadata:
+			if s.fnos == nil || !s.fnos.ManagementConfigured() {
+				issues = append(issues, ValidationIssue{Level: "error", Message: "请先在飞牛影视反代中配置管理权限", ActionIndex: index, ActionType: action.Type})
+				continue
+			}
+			if strings.TrimSpace(anyString(action.Params["library_id"])) == "" {
+				issues = append(issues, ValidationIssue{Level: "error", Message: "请选择飞牛影视媒体库", ActionIndex: index, ActionType: action.Type})
+			}
+			if action.Type == domain.AutomationActionFnosRefreshMetadata {
+				mode := anyInt(action.Params["refresh_mode"])
+				if mode != 0 && mode != 1 {
+					issues = append(issues, ValidationIssue{Level: "error", Message: "飞牛影视元数据刷新方式无效", ActionIndex: index, ActionType: action.Type})
+				}
 			}
 		}
 	}
@@ -165,7 +179,7 @@ func (s *Service) normalizeInput(ctx context.Context, in RuleInput) (RuleInput, 
 	}
 	in.TriggerType = strings.TrimSpace(in.TriggerType)
 	switch in.TriggerType {
-	case domain.AutomationTriggerDaily, domain.AutomationTriggerInterval, domain.AutomationTriggerWebhook, domain.AutomationTriggerOfflineDownload:
+	case domain.AutomationTriggerDaily, domain.AutomationTriggerInterval, domain.AutomationTriggerAdvanced, domain.AutomationTriggerWebhook, domain.AutomationTriggerOfflineDownload:
 	default:
 		return in, domain.Errorf(domain.CodeValidation, "触发条件不支持")
 	}
@@ -183,6 +197,22 @@ func (s *Service) normalizeInput(ctx context.Context, in RuleInput) (RuleInput, 
 		}
 		if anyInt(in.TriggerConfig["interval_hours"]) <= 0 {
 			return in, domain.Errorf(domain.CodeValidation, "间隔小时必须大于 0")
+		}
+	case domain.AutomationTriggerAdvanced:
+		if strings.TrimSpace(anyString(in.TriggerConfig["time"])) == "" {
+			return in, domain.Errorf(domain.CodeValidation, "请选择触发时间")
+		}
+		switch anyString(in.TriggerConfig["schedule_mode"]) {
+		case "weekly":
+			if !validScheduleValues(in.TriggerConfig["weekdays"], 1, 7) {
+				return in, domain.Errorf(domain.CodeValidation, "请至少选择一个星期")
+			}
+		case "monthly":
+			if !validScheduleValues(in.TriggerConfig["month_days"], 1, 31) {
+				return in, domain.Errorf(domain.CodeValidation, "请至少选择一个日期")
+			}
+		default:
+			return in, domain.Errorf(domain.CodeValidation, "高级定时类型不支持")
 		}
 	case domain.AutomationTriggerWebhook:
 		if strings.TrimSpace(anyString(in.TriggerConfig["event"])) == "" {
@@ -214,7 +244,7 @@ func (s *Service) normalizeInput(ctx context.Context, in RuleInput) (RuleInput, 
 		}
 		in.Actions[i].Type = strings.TrimSpace(in.Actions[i].Type)
 		switch in.Actions[i].Type {
-		case domain.AutomationActionOrganize, domain.AutomationActionStrm, domain.AutomationActionStrmScrape, domain.AutomationActionCacheClear, domain.AutomationActionDelay, domain.AutomationActionEmbyRefresh, domain.AutomationActionEmbyCompleteMediaInfo:
+		case domain.AutomationActionOrganize, domain.AutomationActionStrm, domain.AutomationActionStrmScrape, domain.AutomationActionCacheClear, domain.AutomationActionDelay, domain.AutomationActionEmbyRefresh, domain.AutomationActionEmbyCompleteMediaInfo, domain.AutomationActionFnosScan, domain.AutomationActionFnosRefreshMetadata:
 		default:
 			return in, domain.Errorf(domain.CodeValidation, "存在不支持的动作")
 		}
@@ -231,6 +261,20 @@ func (s *Service) normalizeInput(ctx context.Context, in RuleInput) (RuleInput, 
 		return in, domain.Errorf(domain.CodeValidation, "%s", validation.Issues[0].Message)
 	}
 	return in, nil
+}
+
+func validScheduleValues(value any, minValue, maxValue int) bool {
+	values, ok := value.([]any)
+	if !ok || len(values) == 0 {
+		return false
+	}
+	for _, item := range values {
+		value := anyInt(item)
+		if value < minValue || value > maxValue {
+			return false
+		}
+	}
+	return true
 }
 
 type strmScheduleRollback struct {
@@ -268,7 +312,7 @@ func (s *Service) bindStrmTasksManual(ctx context.Context, actions []RuleAction)
 		task.ScheduleMode = domain.StrmScheduleManual
 		if _, err := s.strm.UpdateTask(ctx, taskID, task); err != nil {
 			if rollbackErr := s.rollbackStrmTasks(ctx, rollbacks); rollbackErr != nil {
-				s.log.Warn("automation rollback strm schedule failed", "err", rollbackErr)
+				s.log.Warn("回滚 STRM 调度失败", "err", rollbackErr)
 			}
 			return nil, err
 		}

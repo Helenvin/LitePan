@@ -39,7 +39,7 @@ withDefaults(
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 28px 20px;
+  padding: var(--preview-overlay-padding, 28px 20px);
   text-align: center;
   color: var(--preview-muted, #9eb0c8);
 }

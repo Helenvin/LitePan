@@ -262,6 +262,76 @@ func TestGroupSpiritedAwayDirs(t *testing.T) {
 	}
 }
 
+// 回归：自定义命名的「合集」容器目录不应被当成单部电影目录。
+// 否则目录内多部不同影片会被合并成一个作品，只匹配一次 TMDB，
+// 最终多条记录指向同一个目标名。
+func TestGroupCollectionContainerDirKeepsFilesSeparate(t *testing.T) {
+	coll := rules.Ancestor{ID: "d-coll", Name: "黑夜传说合集"}
+	p := newTestPlanner(nil, nil, "root-movie")
+	entries := []planner.BatchEntryForTest{
+		{Item: domain.FileItem{ID: "f1", Name: "黑夜传说.iso"}, Ancestors: []rules.Ancestor{coll}},
+		{Item: domain.FileItem{ID: "f2", Name: "黑夜传说2：进化.iso"}, Ancestors: []rules.Ancestor{coll}},
+		{Item: domain.FileItem{ID: "f3", Name: "黑夜传说3：狼族崛起.iso"}, Ancestors: []rules.Ancestor{coll}},
+	}
+	groups, skips := planner.GroupEntriesForTestExport(p, entries)
+	if len(skips) > 0 {
+		t.Fatalf("unexpected skips: %+v", skips)
+	}
+	if len(groups) != len(entries) {
+		t.Fatalf("合集目录内 %d 个不同影片应各自成组，实际 %d 组: %+v", len(entries), len(groups), groups)
+	}
+	for key, n := range groups {
+		if key.DirID != "" {
+			t.Fatalf("合集目录不应作为电影目录，实际 dirID=%q dirName=%q", key.DirID, key.DirName)
+		}
+		if n != 1 {
+			t.Fatalf("每组应只有 1 个文件，实际 title=%q count=%d", key.Title, n)
+		}
+	}
+}
+
+// 回归：rename 模式下，合集容器目录里的散落影片也要各自建好作品文件夹
+// （否则原地改名后仍不符合刮削结构）；同时合集目录只是多了子文件夹、
+// 并没有被搬空，不能给它生成清理动作。
+func TestRenamePlacesCollectionMoviesIntoWorkDirs(t *testing.T) {
+	fs := &mockFS{dirs: map[string][]domain.FileItem{
+		"root": {domain.FileItem{ID: "d-coll", Name: "黑夜传说合集", IsDir: true}},
+		"d-coll": {
+			domain.FileItem{ID: "c1", Name: "黑夜传说.iso"},
+			domain.FileItem{ID: "c2", Name: "黑夜传说2：进化.iso"},
+		},
+	}}
+	tmdb := &mockTMDB{searchFn: func(q string, _ *int) []map[string]any {
+		return []map[string]any{{"id": 100, "title": q, "release_date": "2003-01-01"}}
+	}}
+	p := newTestPlanner(fs, tmdb, "root")
+	plan, err := p.Build()
+	if err != nil {
+		t.Fatalf("build err %v", err)
+	}
+	workDirs := 0
+	relocated := 0
+	for _, a := range plan.Actions {
+		switch a.Kind {
+		case moplan.ActionKindEnsureDir:
+			if a.TargetParentID != "d-coll" {
+				t.Fatalf("作品文件夹应建在合集目录内，实际目标父目录 %q", a.TargetParentID)
+			}
+			workDirs++
+		case moplan.ActionKindRelocate:
+			relocated++
+		case moplan.ActionKindDeleteEmptyDir:
+			t.Fatalf("合集目录只是多了子文件夹、并未被搬空，不应生成清理动作: %+v", a)
+		}
+	}
+	if workDirs != 2 {
+		t.Fatalf("want 2 个作品文件夹，got %d", workDirs)
+	}
+	if relocated != 2 {
+		t.Fatalf("want 2 个文件移动动作，got %d", relocated)
+	}
+}
+
 func TestGroupAnZhanWithoutYear(t *testing.T) {
 	p := newTestPlanner(nil, nil, "root")
 	entries := []planner.BatchEntryForTest{{

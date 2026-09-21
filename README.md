@@ -77,7 +77,7 @@
 
 ## ▎ 快速开始
 
-**Docker Compose 部署** · 镜像标签：`Beta`或指定`v0.5.5-Beta`
+**Docker Compose 部署** · 镜像标签：`Beta`或指定`v0.5.6-Beta`
 
 ```yaml
 services:
@@ -151,7 +151,7 @@ services:
 第三方依赖见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。请遵守各网盘服务条款与当地法规。
 
 [docker-pulls-shield]: https://img.shields.io/docker/pulls/ponphil/litepan?logo=docker&logoColor=white&style=flat-square
-[version-shield]: https://img.shields.io/badge/Version-v0.5.5--Beta-6C63FF?style=flat-square
+[version-shield]: https://img.shields.io/badge/Version-v0.5.6--Beta-6C63FF?style=flat-square
 [license-shield]: https://img.shields.io/badge/License-PolyForm%20NC-red?style=flat-square
 [docker-url]: https://hub.docker.com/r/ponphil/litepan
 [license-url]: ./LICENSE

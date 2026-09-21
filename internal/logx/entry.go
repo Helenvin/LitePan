@@ -28,8 +28,8 @@ type Stats struct {
 	ByLevel                    map[string]int `json:"by_level"`
 	ByModule                   map[string]int `json:"by_module"`
 	RecentErrors               int            `json:"recent_errors"`
-	RecentErrorsTotal          int            `json:"recent_errors_total"`
 	RecentUnacknowledgedErrors int            `json:"recent_unacknowledged_errors"`
 	LastRecentErrorAt          string         `json:"last_recent_error_at,omitempty"`
-	LastAcknowledgedErrorAt    string         `json:"last_acknowledged_error_at,omitempty"`
+	// Truncated 为 true 表示统计因读取预算用尽而提前结束，各计数只是下界而非精确值。
+	Truncated bool `json:"truncated,omitempty"`
 }

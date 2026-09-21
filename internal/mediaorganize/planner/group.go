@@ -139,7 +139,7 @@ func (p *Planner) groupEntries(entries []batchEntry) (map[groupKey][]batchEntry,
 			if rules.IsGenericMediaDir(anc.Name) || rules.IsSeasonDirName(anc.Name) || rules.IsEpisodeRangeDirName(anc.Name) {
 				continue
 			}
-			if rules.IsCollectionContainerDir(anc.Name, nil) {
+			if rules.IsCollectionContainerDir(anc.Name) {
 				continue
 			}
 			if rules.IsSpecialContentDirName(anc.Name) {
@@ -185,9 +185,8 @@ func (p *Planner) groupEntries(entries []batchEntry) (map[groupKey][]batchEntry,
 		}
 
 		tvRule := rules.LooksLikeTVFileWithName(fileParsed, ancestors, entry.item.Name)
-		// 文件自带剧集身份（SxxExx 或解析出集号）时优先归入剧集 Season 00，
-		// 不被"带年份的番外/特别篇目录"劫持成独立电影；目录中的纯电影文件仍按独立电影处理。
-		// 文件名包含祖先剧集名的番外（如「一人之下 番外篇 天师下山」）同样视为剧集内容。
+		// 文件自带剧集身份时归入剧集 Season 00，不被带年份的番外/特别篇目录劫持成独立电影；
+		// 文件名含祖先剧集名的番外同样算剧集内容，纯电影文件仍按独立电影处理。
 		showIdentity := rules.FileNameCarriesShowIdentity(entry.item.Name, ancestors)
 		hasEpisodeIdentity := fileParsed.Episode != nil || rules.HasExplicitSeasonToken(entry.item.Name) || showIdentity
 		nestedMovieID, _ := rules.FindNearestStandaloneMovieDir(ancestors)
@@ -241,7 +240,7 @@ func (p *Planner) groupEntries(entries []batchEntry) (map[groupKey][]batchEntry,
 				if rules.IsGenericMediaDir(anc.Name) || rules.IsSeasonDirName(anc.Name) || rules.IsEpisodeRangeDirName(anc.Name) {
 					continue
 				}
-				if rules.IsCollectionContainerDir(anc.Name, nil) {
+				if rules.IsCollectionContainerDir(anc.Name) {
 					continue
 				}
 				parsed := rules.NormalizeParsedMedia(rules.ParseDirName(anc.Name))
@@ -255,7 +254,7 @@ func (p *Planner) groupEntries(entries []batchEntry) (map[groupKey][]batchEntry,
 		}
 		if movieDirID == "" && len(ancestors) > 0 {
 			anc := ancestors[len(ancestors)-1]
-			if !rules.IsGenericMediaDir(anc.Name) && !rules.IsSeasonDirName(anc.Name) && !rules.IsEpisodeRangeDirName(anc.Name) {
+			if !rules.IsGenericMediaDir(anc.Name) && !rules.IsSeasonDirName(anc.Name) && !rules.IsEpisodeRangeDirName(anc.Name) && !rules.IsCollectionContainerDir(anc.Name) {
 				parsed := rules.NormalizeParsedMedia(rules.ParseDirName(anc.Name))
 				if parsed.Title != "" {
 					movieDirID = anc.ID
@@ -305,8 +304,7 @@ func (p *Planner) groupEntries(entries []batchEntry) (map[groupKey][]batchEntry,
 	return attachSingleTVWorkRoot(groups), pending
 }
 
-// analyzeBareNumberedTVDirs 识别“作品目录/01.mp4、02.mp4…”这类无 SxxExx 标记的剧集。
-// 单个纯数字文件仍保持电影保守判定；同目录至少出现 3 个连续集号才认为剧集。
+// analyzeBareNumberedTVDirs 识别无 SxxExx 标记的“作品目录/01.mp4”式剧集，同目录至少 3 个连续集号才算。
 func analyzeBareNumberedTVDirs(entries []batchEntry) map[string]bool {
 	episodesByDir := make(map[string]map[int]struct{})
 	for _, entry := range entries {

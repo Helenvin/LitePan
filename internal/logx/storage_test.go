@@ -136,17 +136,33 @@ func TestStatsFilteredTracksRecentUnacknowledgedErrors(t *testing.T) {
 	if stats.RecentErrors != 2 {
 		t.Fatalf("StatsFiltered().RecentErrors = %d", stats.RecentErrors)
 	}
-	if stats.RecentErrorsTotal != 3 {
-		t.Fatalf("StatsFiltered().RecentErrorsTotal = %d", stats.RecentErrorsTotal)
-	}
 	if stats.RecentUnacknowledgedErrors != 1 {
 		t.Fatalf("StatsFiltered().RecentUnacknowledgedErrors = %d", stats.RecentUnacknowledgedErrors)
 	}
 	if stats.LastRecentErrorAt != newRecent {
 		t.Fatalf("StatsFiltered().LastRecentErrorAt = %q", stats.LastRecentErrorAt)
 	}
-	if stats.LastAcknowledgedErrorAt != oldRecent {
-		t.Fatalf("StatsFiltered().LastAcknowledgedErrorAt = %q", stats.LastAcknowledgedErrorAt)
+}
+
+func TestScanRecentFileBudgetKeepsNewestEntries(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	name := now.Format("2006-01-02") + ".log"
+	old := now.Add(-time.Hour).Format(time.RFC3339)
+	newest := now.Add(-time.Minute).Format(time.RFC3339)
+	writeLogEntries(t, dir, name, []Entry{
+		{Timestamp: old, Level: LevelInfo, Module: "system", Message: strings.Repeat("x", 256)},
+		{Timestamp: newest, Level: LevelError, Module: "system", Message: "newest-error"},
+	})
+
+	storage := &Storage{dir: dir}
+	stats := Stats{ByLevel: map[string]int{}, ByModule: map[string]int{}}
+	_, exhausted := storage.scanRecentFile(name, LevelInfo, "", now.Add(-24*time.Hour).Format(time.RFC3339), &stats, 64)
+	if !exhausted {
+		t.Fatal("小预算应提前结束统计")
+	}
+	if stats.RecentErrors != 1 || stats.LastRecentErrorAt != newest {
+		t.Fatalf("应优先保留最新错误，实际 %+v", stats)
 	}
 }
 
@@ -180,4 +196,76 @@ func messageLengths(messages []string) []int {
 		lengths = append(lengths, len(message))
 	}
 	return lengths
+}
+
+func TestEnqueueOverflowDropsInsteadOfWritingFallback(t *testing.T) {
+	dir := t.TempDir()
+	s := &Storage{dir: dir, queue: make(chan Entry, 2), fallback: filepath.Join(dir, fallbackFileName)}
+
+	for i := 0; i < 2; i++ {
+		s.Enqueue(Entry{Level: LevelInfo, Module: "system", Message: "queued"})
+	}
+	// 队列已满：不得在调用方 goroutine 里同步写兜底文件，只能计数
+	s.Enqueue(Entry{Level: LevelInfo, Module: "system", Message: "over-1"})
+	s.Enqueue(Entry{Level: LevelInfo, Module: "system", Message: "over-2"})
+
+	if _, err := os.Stat(s.fallback); !os.IsNotExist(err) {
+		t.Fatalf("队列满时不应同步写兜底文件, err=%v", err)
+	}
+	if got := s.dropped.Load(); got != 2 {
+		t.Fatalf("丢弃计数 = %d, want 2", got)
+	}
+
+	batch := s.appendDropNotice(nil)
+	if len(batch) != 1 {
+		t.Fatalf("应汇总出一条丢弃告警, 实际 %d 条", len(batch))
+	}
+	if batch[0].Level != LevelWarn || !strings.Contains(batch[0].Message, "2") {
+		t.Fatalf("告警内容异常: %+v", batch[0])
+	}
+	if got := s.dropped.Load(); got != 0 {
+		t.Fatalf("生成告警后计数应清零, 实际 %d", got)
+	}
+	if again := s.appendDropNotice(nil); len(again) != 0 {
+		t.Fatalf("无丢弃时不应产生告警, 实际 %d 条", len(again))
+	}
+}
+
+func TestFallbackLogIsListedAndCleanedByAge(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, fallbackFileName)
+	if err := os.WriteFile(path, []byte("{\"level\":30}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Storage{dir: dir, fallback: path}
+
+	files, err := s.listFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, name := range files {
+		if name == fallbackFileName {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("兜底日志应出现在日志列表中, 实际 %v", files)
+	}
+
+	// 保留 3 天，把兜底文件改成 10 天前写入 → 应被清理
+	old := time.Now().AddDate(0, 0, -10)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := s.CleanupOldLogs(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("清理数 = %d, want 1", deleted)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("过期的兜底日志应被删除, err=%v", err)
+	}
 }

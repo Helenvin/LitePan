@@ -488,13 +488,14 @@ func TestManualTMDBMatchReplansAndAppliesUnmatchedWork(t *testing.T) {
 	}
 
 	ex := executor.New(context.Background(), fs, matchedPlan, 1, false, func(msg string) { t.Log(msg) }, nil)
-	result, err := ex.Apply()
-	if err != nil {
+	if _, err := ex.Apply(); err != nil {
 		t.Fatal(err)
 	}
-	stats, _ := result["stats"].(map[string]any)
-	if fmt.Sprint(stats["failed"]) != "0" {
-		t.Fatalf("执行手动匹配计划失败: %+v", result)
+	// 以动作状态判断失败。
+	for _, action := range matchedPlan.Actions {
+		if action.Status == "failed" {
+			t.Fatalf("执行手动匹配计划失败: %s (%s)", action.ID, action.Error)
+		}
 	}
 	newWorkDirID := "target/模拟电影 (2026) {tmdb-999001}"
 	if len(fs.dirs[newWorkDirID]) != 1 || !strings.Contains(fs.dirs[newWorkDirID][0].Name, "模拟电影 - Mock Movie (2026)") {

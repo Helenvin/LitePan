@@ -123,7 +123,7 @@ func (sch *Scheduler) startLoop(startupJitter bool) {
 			close(sch.done)
 		}()
 		if startupJitter {
-			sch.log.Info(fmt.Sprintf("认证调度器等待启动退避 %s", activeAuthStartupDelay))
+			sch.log.Debug(fmt.Sprintf("认证调度器等待启动退避 %s", activeAuthStartupDelay))
 			select {
 			case <-time.After(activeAuthStartupDelay):
 			case <-sch.stop:
@@ -207,13 +207,6 @@ func (sch *Scheduler) drainRecalc() {
 	}
 }
 
-func recalcLogPrefix(reason string) string {
-	if reason == "" {
-		return "重新计算检查时间"
-	}
-	return fmt.Sprintf("重新计算检查时间（%s）", reason)
-}
-
 // formatSchedTime 把调度时刻格式化为本地时间，与 stdout 日志前缀 time=HH:MM:SS 一致。
 func formatSchedTime(t time.Time) string {
 	if t.IsZero() {
@@ -238,12 +231,10 @@ func (sch *Scheduler) logNextWaitIfChanged(next time.Time, wait time.Duration, r
 }
 
 func (sch *Scheduler) logNextWait(next time.Time, wait time.Duration, reason string, schedules []refreshSchedule) {
-	prefix := recalcLogPrefix(reason)
 	nextStr := formatSchedTime(next)
 	unit, amount := formatWait(wait)
 	if len(schedules) == 0 {
-		sch.log.Info(fmt.Sprintf("%s，当前无账号纳入主动认证刷新，下次空闲检查: %s (等待%d%s)",
-			prefix, nextStr, amount, unit),
+		sch.log.Info(fmt.Sprintf("下次认证检查: %s (等待%d%s)", nextStr, amount, unit),
 			"next_check", nextStr, "wait", wait.String(), "reason", reason)
 		return
 	}
@@ -259,8 +250,7 @@ func (sch *Scheduler) logNextWait(next time.Time, wait time.Duration, reason str
 	}
 	sch.log.Debug("各账号检查时间: "+strings.Join(summaries, " | "), "account_count", len(schedules))
 
-	sch.log.Info(fmt.Sprintf("%s，最短检查时间: %s，下次检查: %s (等待%d%s)",
-		prefix, shortestName, nextStr, amount, unit),
+	sch.log.Info(fmt.Sprintf("下次认证检查: %s (等待%d%s)", nextStr, amount, unit),
 		"account", shortestName, "next_check", nextStr, "wait", wait.String(), "reason", reason)
 }
 
@@ -339,17 +329,20 @@ func (sch *Scheduler) executeCheck(ctx context.Context) {
 		}
 		attempted++
 		outcome, err := sch.svc.Refresh(ctx, id, driver.CallerActive)
-		switch {
-		case outcome == driver.RefreshSuccess:
+		nextCheck := formatSchedTime(sch.svc.calcNextCheck(ctx, id, time.Now(), false))
+		label := scheduleLabel(name, schedule.driverType)
+		if outcome == driver.RefreshSuccess {
 			success++
-			sch.log.Info(fmt.Sprintf("账号 %s 主动认证刷新成功", name), "account_id", id, "account", name)
-		case err != nil:
-			sch.log.Warn(fmt.Sprintf("账号 %s 主动认证刷新失败: %v", name, err),
-				"account_id", id, "account", name, "outcome", outcome.String())
-		default:
-			sch.log.Warn(fmt.Sprintf("账号 %s 主动认证刷新失败: %s", name, outcome.String()),
-				"account_id", id, "account", name, "outcome", outcome.String())
+			sch.log.Info(fmt.Sprintf("账号 %s 认证刷新成功，下次检查 %s", label, nextCheck),
+				"account_id", id, "account", name, "driver", schedule.driverType, "next_check", nextCheck)
+			continue
 		}
+		cause := outcome.String()
+		if err != nil {
+			cause = err.Error()
+		}
+		sch.log.Warn(fmt.Sprintf("账号 %s 认证刷新失败: %s，下次检查 %s", label, cause, nextCheck),
+			"account_id", id, "account", name, "driver", schedule.driverType, "outcome", outcome.String(), "next_check", nextCheck)
 	}
 	if attempted == 0 {
 		if forceAll && len(due) > 0 {

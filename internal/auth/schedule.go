@@ -7,7 +7,7 @@ import (
 	"litepan/internal/driver"
 )
 
-// 首次写入凭证时种子调度，避免立即被当成到期
+// SeedInitialSchedule 首次写入凭证时种子调度，避免立即被当成到期。
 func SeedInitialSchedule(st *domain.AuthState, driverType string, now time.Time) {
 	if st == nil {
 		return

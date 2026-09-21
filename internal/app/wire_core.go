@@ -12,7 +12,6 @@ import (
 	"litepan/internal/eventbus"
 	"litepan/internal/logx"
 	"litepan/internal/settings"
-	"litepan/internal/strm"
 	"litepan/pkg/secretkey"
 )
 
@@ -24,7 +23,6 @@ type coreBundle struct {
 	sched    *auth.Scheduler
 	exec     *driverexec.Executor
 	listHits *cache.HitTracker
-	strm     *strm.Coordinator
 	secret   []byte
 }
 
@@ -33,6 +31,7 @@ func wireCore(ctx context.Context, cfg config.Config, logs *logx.Manager, st *st
 	cacheSvc := cache.NewService(cache.Options{
 		MaxItems: st.settings.Int(settings.KeyCacheMaxItems),
 		MemLimit: int64(st.settings.Int(settings.KeyCacheMemoryLimitMB)) * 1024 * 1024,
+		Log:      logs.For(logx.ModuleCache),
 	})
 	cache.NewCleaner(cacheSvc, logs.For(logx.ModuleCache)).Register(bus)
 

@@ -445,17 +445,6 @@ func tmdbSeasonEpisodeCountMap(rawSeasons []json.RawMessage) map[int]int {
 	return out
 }
 
-func sumTMDBSeasonEpisodeCounts(rawSeasons []json.RawMessage, seasons []int) int {
-	counts := tmdbSeasonEpisodeCountMap(rawSeasons)
-	total := 0
-	for _, sn := range seasons {
-		if sn > 0 {
-			total += counts[sn]
-		}
-	}
-	return total
-}
-
 // effectiveSeasonEpisodeCount 有 finale 时按集列表计数，否则保留 episode_count。
 func effectiveSeasonEpisodeCount(detail *tmdbSeasonDetail, fallback int) int {
 	fin := finaleEpisodeNumber(detail)
@@ -490,9 +479,9 @@ func finaleEpisodeNumber(detail *tmdbSeasonDetail) int {
 	return best
 }
 
-func (s *Service) writeSeasonPosters(ctx context.Context, client *tmdb.Client, g workGroup, tmdbID string, overwrite bool) error {
+func (s *Service) writeSeasonPosters(ctx context.Context, client *tmdb.Client, g workGroup, tmdbID string, overwrite bool, seasonDirs []seasonDir) error {
 	showDir := g.absDir
-	seasons := listLocalSeasonNumbers(showDir)
+	seasons := seasonNumbersFromDirs(seasonDirs)
 	if len(seasons) == 0 {
 		return nil
 	}

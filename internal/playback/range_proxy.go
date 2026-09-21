@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -17,8 +18,7 @@ import (
 
 const upstreamCopyChunk = 1024 * 1024
 
-// ErrInvalidRangeResponse 表示上游拒绝或错误处理了断点区间，调用方可清空
-// 本地断点后从头重试。
+// ErrInvalidRangeResponse 表示上游拒绝或错误处理了断点区间，调用方可清空本地断点重试。
 var ErrInvalidRangeResponse = errors.New("上游 Range 响应无效")
 
 var copyBufPool = sync.Pool{
@@ -289,8 +289,7 @@ func (s *Service) pipeUpstreamRange(ctx context.Context, w io.Writer, lh *linkHo
 	return domain.Errorf(domain.CodeDriverError, "上游 Range 数据不完整")
 }
 
-// shouldRefreshUpstreamStatus 只对可能由临时直链过期或上游短暂异常造成的状态刷新地址。
-// 其他 4xx 通常是请求本身有误，重试没有意义。
+// shouldRefreshUpstreamStatus 只对临时直链过期或上游短暂异常的状态刷新地址，其他 4xx 重试无意义。
 func shouldRefreshUpstreamStatus(status int) bool {
 	return status == http.StatusUnauthorized ||
 		status == http.StatusForbidden ||
@@ -369,18 +368,6 @@ func (s *Service) doRangeRequest(ctx context.Context, accountID int64, link doma
 		}
 	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
-	if benchUpstreamHeaders() || benchForwardClientHeaders() {
-		req.Header.Set("Accept", "*/*")
-		req.Header.Set("Connection", "keep-alive")
-		req.Header.Set("Accept-Encoding", "identity")
-	}
-	if benchForwardClientHeaders() {
-		req.Header.Set("Origin", "http://127.0.0.1:5211")
-		req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9")
-		req.Header.Set("Sec-Fetch-Site", "same-origin")
-		req.Header.Set("Sec-Fetch-Mode", "no-cors")
-		req.Header.Set("Sec-Fetch-Dest", "empty")
-	}
 	resp, err := s.upstreamClient(link).Do(req)
 	if err != nil {
 		release()
@@ -418,17 +405,22 @@ func (s *Service) passthrough(w http.ResponseWriter, r *http.Request, req Reques
 	transport := s.upstreamClient(res.Link).Transport
 	proxy := &httputil.ReverseProxy{
 		Transport: transport,
-		Director: func(out *http.Request) {
-			out.URL = target
-			out.Host = target.Host
-			out.Method = r.Method
-			out.Header = r.Header.Clone()
+		// 用 Rewrite 取代 Director，SetURL 会把入站路径拼到目标后面；Rewrite 不自动补 X-Forwarded-For。
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			*pr.Out.URL = *target // 直接复制目标 URL；不能用 SetURL，它会把入站请求路径拼在后面
+			pr.Out.Host = target.Host
 			for k, vs := range res.Link.Headers {
 				for _, v := range vs {
-					out.Header.Set(k, v)
+					pr.Out.Header.Set(k, v)
 				}
 			}
-			out.Header.Del("Host")
+			pr.Out.Header.Del("Host")
+			if ip, _, err := net.SplitHostPort(pr.In.RemoteAddr); err == nil {
+				if prior := pr.Out.Header.Get("X-Forwarded-For"); prior != "" {
+					ip = prior + ", " + ip
+				}
+				pr.Out.Header.Set("X-Forwarded-For", ip)
+			}
 		},
 	}
 	proxy.ServeHTTP(w, r)

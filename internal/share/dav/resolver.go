@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"litepan/internal/domain"
@@ -23,6 +24,30 @@ type Resolver struct {
 	files    *file.Service
 	accounts domain.AccountRepository
 	wc       *webdavCache
+}
+
+type accountListCacheKey struct{}
+
+type accountListCache struct {
+	once sync.Once
+	list []*domain.Account
+	err  error
+}
+
+func withAccountListCache(ctx context.Context) context.Context {
+	if _, ok := ctx.Value(accountListCacheKey{}).(*accountListCache); ok {
+		return ctx
+	}
+	return context.WithValue(ctx, accountListCacheKey{}, &accountListCache{})
+}
+
+func (r *Resolver) listAccounts(ctx context.Context) ([]*domain.Account, error) {
+	cache, ok := ctx.Value(accountListCacheKey{}).(*accountListCache)
+	if !ok {
+		return r.accounts.List(ctx)
+	}
+	cache.once.Do(func() { cache.list, cache.err = r.accounts.List(ctx) })
+	return cache.list, cache.err
 }
 
 func NewResolver(files *file.Service, accounts domain.AccountRepository, wc *webdavCache) *Resolver {
@@ -66,7 +91,7 @@ func (r *Resolver) accountByName(ctx context.Context, name string) (*domain.Acco
 	if r.accounts == nil {
 		return nil, os.ErrNotExist
 	}
-	list, err := r.accounts.List(ctx)
+	list, err := r.listAccounts(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +113,7 @@ func (r *Resolver) ListChildren(ctx context.Context, node *Node) ([]domain.FileI
 		if r.accounts == nil {
 			return nil, nil
 		}
-		list, err := r.accounts.List(ctx)
+		list, err := r.listAccounts(ctx)
 		if err != nil {
 			return nil, err
 		}

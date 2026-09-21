@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	prefixPathMap     = "pathmap"
-	prefixWebDAVMeta  = "webdavmeta"
+	prefixPathMap    = "pathmap"
+	prefixWebDAVMeta = "webdavmeta"
 )
 
 // PathMapEntry 缓存 WebDAV 路径到网盘文件的映射。

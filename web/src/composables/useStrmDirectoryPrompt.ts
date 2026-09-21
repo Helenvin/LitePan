@@ -33,6 +33,9 @@ export function useStrmDirectoryPrompt(options: {
   refreshing: Ref<boolean>;
   enabled?: Ref<boolean>;
   getDisplayPath: () => string;
+  // getDirNames 返回当前目录的目录段数组；显示路径无法还原段边界
+  // （目录名自带斜杠时和多层目录长得一样），所以请求里一并带上。
+  getDirNames?: () => string[];
   getParentId: () => string;
 }) {
   const status = ref<StrmDirectoryStatus | null>(null);
@@ -78,6 +81,7 @@ export function useStrmDirectoryPrompt(options: {
     }
     const currentSeq = ++seq;
     const path = options.getDisplayPath();
+    const dirs = options.getDirNames?.() ?? [];
     const parentId = options.getParentId();
     const items = buildDirectoryItems(options.files.value);
     const controller = new AbortController();
@@ -87,13 +91,14 @@ export function useStrmDirectoryPrompt(options: {
         account_id: accountId,
         parent_id: parentId,
         path,
+        dirs,
         items,
       }, controller.signal);
-      if (isStaleStatusRequest(currentSeq, accountId, parentId, path)) return;
+      if (isStaleStatusRequest(currentSeq, accountId, parentId, dirs)) return;
       status.value = result;
     } catch (error) {
       if (isCancelledRequest(error)) return;
-      if (isStaleStatusRequest(currentSeq, accountId, parentId, path)) return;
+      if (isStaleStatusRequest(currentSeq, accountId, parentId, dirs)) return;
       status.value = null;
     } finally {
       if (statusController === controller) {
@@ -102,12 +107,14 @@ export function useStrmDirectoryPrompt(options: {
     }
   }
 
-  function isStaleStatusRequest(requestSeq: number, accountId: number, parentId: string, path: string) {
+  // 用目录段数组判断请求是否过期：它是无歧义的（显示路径分不清一个带斜杠的名字和
+  // 多层目录，两个不同目录可能拼出同一个 path）。
+  function isStaleStatusRequest(requestSeq: number, accountId: number, parentId: string, dirs: string[]) {
     return (
       requestSeq !== seq ||
       options.accountId.value !== accountId ||
       options.getParentId() !== parentId ||
-      options.getDisplayPath() !== path ||
+      (options.getDirNames?.() ?? []).join("\u0000") !== dirs.join("\u0000") ||
       options.loading.value ||
       options.refreshing.value
     );

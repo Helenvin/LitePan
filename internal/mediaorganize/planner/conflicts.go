@@ -410,6 +410,18 @@ func (p *Planner) planEmptyDirCleanup() {
 
 	starts := map[string]struct{}{}
 	stopAt := map[string]string{}
+	// 本轮新建的作品文件夹：relocate 的目标父目录是这些新文件夹时，
+	// 源目录只是多了一层子文件夹，并没有被搬空，不能排进待清理链。
+	newDirParent := map[string]string{}
+	for _, action := range p.actions {
+		if action.Kind != moplan.ActionKindEnsureDir && action.Kind != moplan.ActionKindMoveAndRenameDir {
+			continue
+		}
+		if action.Status == "skipped" {
+			continue
+		}
+		newDirParent[action.ID] = action.TargetParentID
+	}
 	for _, action := range p.actions {
 		switch action.Kind {
 		case moplan.ActionKindRelocate:
@@ -419,6 +431,11 @@ func (p *Planner) planEmptyDirCleanup() {
 			}
 			if action.TargetParentID == sp {
 				continue
+			}
+			if strings.HasPrefix(action.TargetParentID, "ref:") {
+				if newDirParent[action.TargetParentID[4:]] == sp {
+					continue
+				}
 			}
 			if _, ok := dirRelocateSources[sp]; ok {
 				continue

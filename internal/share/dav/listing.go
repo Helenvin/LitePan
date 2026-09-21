@@ -90,4 +90,3 @@ func pathClean(p string) string {
 	}
 	return "/" + strings.Trim(strings.TrimPrefix(p, "/"), "/")
 }
-

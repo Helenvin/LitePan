@@ -69,15 +69,19 @@ type strmBranchDTO struct {
 	BranchType    string `json:"branch_type"`
 	Status        string `json:"status,omitempty"`
 	Source        string `json:"source,omitempty"`
+	// RelativeDirs 是相对目录的「目录段数组」，仅入参使用、不入库。
+	// 目录名自带斜杠时必须靠它才能确定段边界。
+	RelativeDirs []string `json:"relative_dirs,omitempty"`
 }
 
 type strmBranchPatchDTO struct {
-	ParentID      *string `json:"parent_id"`
-	Path          *string `json:"path"`
-	Recursive     *bool   `json:"recursive"`
-	RetentionDays *int    `json:"retention_days"`
-	BranchType    *string `json:"branch_type"`
-	Status        *string `json:"status"`
+	ParentID      *string  `json:"parent_id"`
+	Path          *string  `json:"path"`
+	Recursive     *bool    `json:"recursive"`
+	RetentionDays *int     `json:"retention_days"`
+	BranchType    *string  `json:"branch_type"`
+	Status        *string  `json:"status"`
+	RelativeDirs  []string `json:"relative_dirs,omitempty"`
 }
 
 func (h *Handler) listStrmTasks(w http.ResponseWriter, r *http.Request) {
@@ -284,7 +288,7 @@ func (h *Handler) createStrmBranch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	branch, err := h.strm.CreateBranch(r.Context(), fromStrmBranchDTO(taskID, in))
+	branch, err := h.strm.CreateBranch(r.Context(), fromStrmBranchDTO(taskID, in), in.RelativeDirs)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -318,7 +322,7 @@ func (h *Handler) updateStrmBranch(w http.ResponseWriter, r *http.Request) {
 		RetentionDays: in.RetentionDays,
 		BranchType:    in.BranchType,
 		Status:        in.Status,
-	})
+	}, in.RelativeDirs)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -379,10 +383,13 @@ type strmCurrentDirectoryItemDTO struct {
 }
 
 type strmCurrentDirectoryDTO struct {
-	AccountID int64                         `json:"account_id"`
-	ParentID  string                        `json:"parent_id"`
-	Path      string                        `json:"path"`
-	Items     []strmCurrentDirectoryItemDTO `json:"items"`
+	AccountID int64  `json:"account_id"`
+	ParentID  string `json:"parent_id"`
+	Path      string `json:"path"`
+	// Dirs 是当前目录的「目录段数组」（相对账号根）。显示路径用 "/" 拼起来后
+	// 无法还原段边界（目录名自带斜杠时和多层目录长得一样），所以前端一并传上来。
+	Dirs  []string                      `json:"dirs,omitempty"`
+	Items []strmCurrentDirectoryItemDTO `json:"items"`
 }
 
 type strmCurrentDirectoryResultDTO struct {
@@ -420,7 +427,7 @@ func (h *Handler) checkStrmDirectoryStatus(w http.ResponseWriter, r *http.Reques
 			ID: item.ID, Name: item.Name, Size: item.Size, IsDir: item.IsDir,
 		})
 	}
-	status, err := h.strm.CheckCurrentDirectoryStatus(r.Context(), in.AccountID, in.ParentID, in.Path, items)
+	status, err := h.strm.CheckCurrentDirectoryStatus(r.Context(), in.AccountID, in.ParentID, in.Path, in.Dirs, items)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -447,7 +454,7 @@ func (h *Handler) generateCurrentDirectoryStrm(w http.ResponseWriter, r *http.Re
 			ID: item.ID, Name: item.Name, Size: item.Size, IsDir: item.IsDir,
 		})
 	}
-	result, err := h.strm.GenerateCurrentDirectory(r.Context(), in.AccountID, in.ParentID, in.Path, items)
+	result, err := h.strm.GenerateCurrentDirectory(r.Context(), in.AccountID, in.ParentID, in.Path, in.Dirs, items)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -660,18 +667,10 @@ func toStrmTaskDTO(task *domain.StrmTask, meta strm.TaskListMeta, automationMana
 	if meta.StaleRunning {
 		out.Status = domain.StrmStatusActive
 	}
-	if !meta.StartedAt.IsZero() {
-		out.StartedAt = FormatAPITime(meta.StartedAt)
-	}
-	if !task.LastScan.IsZero() {
-		out.LastScan = FormatAPITime(task.LastScan)
-	}
-	if !task.CreatedAt.IsZero() {
-		out.CreatedAt = FormatAPITime(task.CreatedAt)
-	}
-	if !task.UpdatedAt.IsZero() {
-		out.UpdatedAt = FormatAPITime(task.UpdatedAt)
-	}
+	out.StartedAt = FormatAPITime(meta.StartedAt)
+	out.LastScan = FormatAPITime(task.LastScan)
+	out.CreatedAt = FormatAPITime(task.CreatedAt)
+	out.UpdatedAt = FormatAPITime(task.UpdatedAt)
 	return out
 }
 

@@ -3,7 +3,7 @@ import AppModal from "@/components/base/AppModal.vue";
 import type { AnnouncementItem } from "@/api/announcement";
 import SvgIcon from "@/components/icons/SvgIcon.vue";
 
-const props = defineProps<{
+defineProps<{
   open: boolean;
   item: AnnouncementItem | null;
 }>();

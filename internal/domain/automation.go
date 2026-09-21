@@ -16,6 +16,7 @@ const (
 
 	AutomationTriggerDaily           = "daily"
 	AutomationTriggerInterval        = "interval"
+	AutomationTriggerAdvanced        = "advanced"
 	AutomationTriggerWebhook         = "webhook"
 	AutomationTriggerOfflineDownload = "offline_download"
 
@@ -26,6 +27,8 @@ const (
 	AutomationActionDelay                 = "delay"
 	AutomationActionEmbyRefresh           = "emby_refresh"
 	AutomationActionEmbyCompleteMediaInfo = "emby_complete_media_info"
+	AutomationActionFnosScan              = "fnos_scan"
+	AutomationActionFnosRefreshMetadata   = "fnos_refresh_metadata"
 
 	AutomationConditionAlways      = "always"
 	AutomationConditionPrevSuccess = "prev_success"

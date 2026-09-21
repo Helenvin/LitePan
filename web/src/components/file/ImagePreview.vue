@@ -375,25 +375,26 @@ onUnmounted(() => {
 .image-preview__loading,
 .image-preview__error {
   position: absolute;
-  left: 50%;
   top: 50%;
   z-index: 4;
-  transform: translate(-50%, -50%);
   border: 1px solid rgb(255 255 255 / 15%);
-  border-radius: var(--radius-control);
   background: rgb(3 11 25 / 86%);
   box-shadow: 0 18px 55px rgb(0 0 0 / 36%);
 }
 
 .image-preview__notice {
+  left: 50%;
   top: auto;
   bottom: 82px;
   max-width: min(70vw, 620px);
   padding: 9px 14px;
+  border: 1px solid rgb(255 255 255 / 15%);
   overflow: hidden;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border-radius: var(--radius-control);
+  transform: translate(-50%, -50%);
 }
 
 .image-preview__loading {

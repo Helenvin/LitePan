@@ -217,12 +217,8 @@ async function toggleSearch() {
   }
 }
 
-const scrapedCount = computed(() => stats.value.ok);
-const missCount = computed(() => stats.value.miss);
-const doubtCount = computed(() => stats.value.doubt);
 const totalCount = computed(() => stats.value.total);
 const loadedCount = computed(() => items.value.length);
-const taskCount = computed(() => tasks.value.length);
 const running = computed(() => Boolean(progress.value?.running));
 const markingNormalId = ref("");
 const rescrapingId = ref("");
@@ -788,11 +784,7 @@ defineExpose({
   refresh: refreshAll,
   refreshing,
   running,
-  taskCount,
   totalCount,
-  scrapedCount,
-  missCount,
-  doubtCount,
 });
 </script>
 

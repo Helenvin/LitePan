@@ -86,6 +86,7 @@ const emit = defineEmits<{
     accountId: number;
     parentId: string;
     path: string;
+    dirs: string[];
     selections?: FolderSelection[];
   }];
   cancel: [];
@@ -121,15 +122,17 @@ function formatFolderTimeShort(value?: string) {
 }
 
 const currentParentId = computed(() => breadcrumb.value[breadcrumb.value.length - 1]?.id ?? "");
+// 相对目录的「目录段数组」。显示路径是用 "/" 拼起来的字符串，目录名自带斜杠时
+// （例：一个名为 abc/def/ghi 的目录）跟三层目录的显示路径完全一样，无法还原段边界，
+// 所以把段数组一并传出，交给后端按段处理。
+const currentDirNames = computed(() => breadcrumb.value.slice(1).map((c) => c.name));
 const currentPath = computed(() => {
   if (props.rootAnchor) {
     const base = props.rootAnchor.path.replace(/\/+$/, "") || "/";
-    const extra = breadcrumb.value.slice(1).map((c) => c.name);
-    if (!extra.length) return base;
-    return `${base}/${extra.join("/")}`;
+    if (!currentDirNames.value.length) return base;
+    return `${base}/${currentDirNames.value.join("/")}`;
   }
-  const names = breadcrumb.value.slice(1).map((c) => c.name);
-  return names.length ? `/${names.join("/")}` : "/";
+  return currentDirNames.value.length ? `/${currentDirNames.value.join("/")}` : "/";
 });
 
 function anchorLabel(anchor: { path: string; label?: string }) {
@@ -253,13 +256,17 @@ function isAncestorSelection(ancestor: FolderSelection, child: FolderSelection) 
     && childPath.startsWith(`${ancestorPath}/`);
 }
 
-function selectionState(dir: FileItem): SelectState {
+function calculateSelectionState(dir: FileItem): SelectState {
   const item = selectionForDir(dir);
   const items = activeSelections.value;
   if (items.some((selected) => String(selected.id) === item.id)) return "checked";
   if (items.some((selected) => isAncestorSelection(selected, item))) return "covered";
   if (items.some((selected) => isAncestorSelection(item, selected))) return "partial";
   return "none";
+}
+
+function selectionState(dir: FileItem): SelectState {
+  return selectionStates.value.get(String(dir.id)) ?? calculateSelectionState(dir);
 }
 
 function isSelected(dir: FileItem) {
@@ -410,6 +417,10 @@ const sortedDirs = computed(() => {
   });
 });
 
+const selectionStates = computed(() => new Map(
+  sortedDirs.value.map((dir) => [String(dir.id), calculateSelectionState(dir)]),
+));
+
 const headerSelectState = computed<SelectState>(() => {
   if (!sortedDirs.value.length) return "none";
   let checkedOrCovered = 0;
@@ -509,8 +520,7 @@ function openDir(dir: FileItem) {
 }
 
 function goTo(index: number) {
-  const minIndex = props.rootAnchor ? 0 : 0;
-  if (index < minIndex) return;
+  if (index < 0) return;
   if (index >= breadcrumb.value.length - 1) return;
   closeFavoriteMenu();
   breadcrumb.value = breadcrumb.value.slice(0, index + 1);
@@ -599,11 +609,13 @@ function selectCurrent() {
     accountId: number;
     parentId: string;
     path: string;
+    dirs: string[];
     selections?: FolderSelection[];
   } = {
     accountId: props.accountId,
     parentId: currentParentId.value,
     path: currentPath.value,
+    dirs: currentDirNames.value,
   };
   if (props.multiSelect && selectedCount.value > 0) {
     payload.selections = activeSelections.value;
@@ -713,8 +725,8 @@ watch(
     </div>
 
     <div class="folder-selector__content" :class="{ 'favorite-mode': favoriteMenuOpen }">
-      <div v-if="showFavoriteEntry" class="folder-selector__panel-stack">
-        <div class="folder-selector__favorites-panel" :class="{ 'is-open': favoriteMenuOpen }">
+      <div class="folder-selector__panel-stack">
+        <div v-if="showFavoriteEntry" class="folder-selector__favorites-panel" :class="{ 'is-open': favoriteMenuOpen }">
           <div class="folder-selector__favorites-head">
             <span class="folder-selector__favorites-title">收藏夹快捷进入</span>
             <span v-if="favoriteItems.length > FAVORITE_PAGE_SIZE" class="folder-selector__favorites-pager">
@@ -886,128 +898,6 @@ watch(
           </div>
         </div>
       </div>
-      <template v-else>
-        <BreadcrumbNav :items="breadcrumb" compact @navigate="goTo" />
-        <div v-if="filterKeyword" class="folder-selector__filter-tip">
-          仅筛选当前目录，匹配 {{ sortedDirs.length }} 项
-        </div>
-
-        <div class="file-list folder-selector__list" :class="tableClass">
-          <div class="folder-table-header" role="row">
-            <label
-              v-if="multiSelect"
-              class="checkbox-col"
-              :title="inverseSelectionDisplay
-                ? (headerSelectState === 'none' ? '排除当前层' : '包含当前层')
-                : (headerSelectState === 'checked' ? '取消全选' : '全选当前层')"
-            >
-              <input
-                type="checkbox"
-                :checked="inverseSelectionDisplay ? headerSelectState === 'none' : headerSelectState === 'checked'"
-                :indeterminate="headerSelectState === 'partial'"
-                :disabled="loading || !sortedDirs.length"
-                @change="toggleSelectAllVisible"
-              />
-            </label>
-            <button
-              v-for="col in columns"
-              :key="col.key"
-              type="button"
-              class="folder-table-heading"
-              :class="[`col-${col.key}`, { active: sortKey === col.key }]"
-              @click="toggleSort(col.key)"
-            >
-              <span class="folder-table-heading-label folder-table-heading-label--full">{{ col.label }}</span>
-              <span class="folder-table-heading-label folder-table-heading-label--compact">
-                {{ col.key === "modified" ? "时间" : col.label }}
-              </span>
-              <span class="sort-indicator" :class="sortClass(col.key)" />
-            </button>
-          </div>
-
-          <div class="folder-table-body">
-            <div v-if="showCreateInput" class="folder-create-row">
-              <span class="folder-name-icon"><SvgIcon name="badge-folder" :size="18" /></span>
-              <input
-                ref="createInputRef"
-                v-model.trim="newFolderName"
-                type="text"
-                class="inline-rename-input"
-                placeholder="输入文件夹名称"
-                maxlength="100"
-                :disabled="creating"
-                @keyup.enter="submitCreateFolder"
-                @keyup.esc="cancelCreateFolder"
-              />
-              <button
-                type="button"
-                class="folder-inline-btn confirm"
-                title="确认"
-                :disabled="creating"
-                @click="submitCreateFolder"
-              >
-                ✓
-              </button>
-              <button
-                type="button"
-                class="folder-inline-btn cancel"
-                title="取消"
-                :disabled="creating"
-                @click="cancelCreateFolder"
-              >
-                ×
-              </button>
-            </div>
-
-            <div v-if="loading" class="folder-state">加载中…</div>
-            <div v-else-if="error" class="folder-state error">{{ error }}</div>
-            <div v-else-if="!sortedDirs.length && !showCreateInput" class="folder-state">
-              {{ filterKeyword ? "当前目录没有匹配的文件夹" : "没有子目录" }}
-            </div>
-            <template v-else>
-              <div
-                v-for="dir in sortedDirs"
-                :key="dir.id"
-                class="folder-table-row"
-                :class="{
-                  selected: multiSelect && !inverseSelectionDisplay && (isSelected(dir) || isPartialSelected(dir)),
-                }"
-                @click="openDir(dir)"
-              >
-                <label
-                  v-if="multiSelect"
-                  class="checkbox-col"
-                  :title="inverseSelectionDisplay
-                    ? (selectionState(dir) === 'covered' ? '已被上级目录排除' : `勾选参与刮削，取消勾选则排除 ${dir.name}`)
-                    : (selectionState(dir) === 'covered'
-                      ? '已包含在上级目录中，请先取消上级目录'
-                      : selectionState(dir) === 'partial'
-                        ? '已选部分子目录，点击改为全选此目录'
-                        : `选择 ${dir.name}`)"
-                  @click.stop
-                >
-                  <input
-                    type="checkbox"
-                    :checked="isDisplayChecked(dir)"
-                    :indeterminate="isDisplayPartial(dir)"
-                    :disabled="selectionState(dir) === 'covered'"
-                    :aria-label="`选择 ${dir.name}`"
-                    @change="toggleDisplaySelect(dir)"
-                  />
-                </label>
-                <div class="folder-name-cell">
-                  <span class="folder-name-icon"><SvgIcon name="badge-folder" :size="18" /></span>
-                  <span class="folder-name-text" :title="dir.name">{{ dir.name }}</span>
-                </div>
-                <span class="folder-time-cell">
-                  <span class="folder-time-cell__full">{{ formatTime(dir.mod_time) }}</span>
-                  <span class="folder-time-cell__compact">{{ formatFolderTimeShort(dir.mod_time) }}</span>
-                </span>
-              </div>
-            </template>
-          </div>
-        </div>
-      </template>
     </div>
 
     <div class="folder-selector__footer">

@@ -290,7 +290,7 @@ func (p *Planner) ensureSeasonDirRenameAction(
 	flattenCollection := false
 	parentName := p.scannedDirNames[parentID]
 	parentParentID := p.scannedDirParents[parentID]
-	if showDirID != "" && parentParentID == showDirID && rules.IsCollectionContainerDir(parentName, nil) {
+	if showDirID != "" && parentParentID == showDirID && rules.IsCollectionContainerDir(parentName) {
 		targetParentID = showDirID
 		flattenCollection = true
 	}

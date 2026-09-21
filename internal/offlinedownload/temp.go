@@ -199,11 +199,11 @@ func (s *Service) runTempCleanup(ctx context.Context) {
 		case <-ticker.C:
 			n, err := s.CleanupOrphanTempDirs(ctx, 0)
 			if err != nil {
-				s.log.Warn("builtin offline temp cleanup failed", "err", err)
+				s.log.Warn("内置离线下载临时目录清理失败", "err", err)
 				continue
 			}
 			if n > 0 {
-				s.log.Info("builtin offline temp cleanup done", "deleted", n)
+				s.log.Info("内置离线下载临时目录清理完成", "deleted", n)
 			}
 		}
 	}

@@ -51,12 +51,6 @@ export function useUploadTasks(deps: UploadTaskDeps) {
 
   const hooks: UploadRuntimeHooks = {
     startScheduler: async () => {},
-    fetchTasks: async () => {},
-    startPolling: () => {},
-    stopPolling: () => {},
-    connectStream: () => {},
-    disconnectStream: () => {},
-    closePanel: () => {},
   };
 
   const stream = useUploadTaskStream(deps, store, hooks);
@@ -103,12 +97,6 @@ export function useUploadTasks(deps: UploadTaskDeps) {
   }
 
   hooks.startScheduler = dispatcher.startUploadTaskScheduler;
-  hooks.fetchTasks = stream.fetchUploadTasks;
-  hooks.startPolling = stream.startUploadTaskPolling;
-  hooks.stopPolling = stream.stopUploadTaskPolling;
-  hooks.connectStream = stream.connectUploadTaskStream;
-  hooks.disconnectStream = stream.disconnectUploadTaskStream;
-  hooks.closePanel = actions.closeUploadTaskPanel;
 
   const getUploadTaskPhaseLabelBound = (task: Parameters<typeof getUploadTaskPhaseLabel>[0]) =>
     getUploadTaskPhaseLabel(task, store.pendingRemoteResumeTaskIds, store.localDispatchingTaskIds);

@@ -328,6 +328,10 @@ func (h *Handler) createLocalUploadTasksSync(
 	if h.accountSvc != nil {
 		accountName, driverType, _ = h.accountSvc.LookupUploadAccount(ctx, accountID)
 	}
+	resolvedRoot, err := filepath.EvalSymlinks(m.Path)
+	if err != nil {
+		return nil, fmt.Errorf("检查服务器上传映射目录失败：%w", err)
+	}
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
@@ -374,13 +378,13 @@ func (h *Handler) createLocalUploadTasksSync(
 			targetParent = parent
 			targetDirs[s.relDir] = targetParent
 		}
-		localPath, err := resolveLocalUploadSource(s.abs, m.Path)
+		localPath, err := resolveLocalUploadSourceUnderRoot(s.abs, resolvedRoot)
 		if err != nil {
 			h.logError("检查服务器上传文件失败", "path", s.abs, "err", err.Error())
 			recordFailure(fmt.Errorf("检查文件 %s 失败：%w", filepath.Base(s.abs), err))
 			continue
 		}
-		info, err := statLocalFile(localPath)
+		info, err := os.Stat(localPath)
 		if err != nil {
 			h.logError("读取本地文件失败", "path", localPath, "err", err.Error())
 			recordFailure(fmt.Errorf("读取文件 %s 失败：%w", filepath.Base(s.abs), err))
@@ -490,16 +494,7 @@ func buildLocalUploadSources(abs, rel string, isDir bool) ([]localUploadSource, 
 	return sources, nil
 }
 
-func statLocalFile(abs string) (fs.FileInfo, error) {
-	return os.Stat(abs)
-}
-
-// 解析符号链接后检查边界。
-func resolveLocalUploadSource(abs, root string) (string, error) {
-	resolvedRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return "", err
-	}
+func resolveLocalUploadSourceUnderRoot(abs, resolvedRoot string) (string, error) {
 	resolvedPath, err := filepath.EvalSymlinks(abs)
 	if err != nil {
 		return "", err

@@ -5,7 +5,7 @@
         <div class="panel-head">
           <div>
             <div class="panel-title">自动联动</div>
-            <div class="panel-sub">示例：定时执行整理任务，质量达标后联动 STRM 和 Emby 刷库。</div>
+            <div class="panel-sub">示例：定时执行整理任务，质量达标后联动 STRM 和 Emby/JF 扫库。</div>
           </div>
           <div class="panel-head-actions">
             <AppButton type="button" size="sm" variant="secondary" @click="openRuns">
@@ -203,7 +203,7 @@
                 <div class="node-ico add"><SvgIcon name="plus" size="1em" /></div>
                 <div class="node-body">
                   <div class="node-title ph">选择要执行的任务</div>
-                  <div class="node-sub">整理 / STRM / 延迟 / Emby 全局刷库</div>
+                  <div class="node-sub">整理 / STRM / 延迟 / Emby/JF 扫库</div>
                 </div>
               </div>
             </div>
@@ -353,44 +353,41 @@
     <AppPlainModal
       :open="pickerVisible"
       :title="pickerKind === 'trigger' ? '选择触发条件' : '添加执行动作'"
-      :size="pickerKind === 'trigger' ? 'sm' : 'md'"
+      size="md"
       body-flush
       @close="cancelPicker"
     >
       <div class="automation-scope">
-        <div v-if="pickerKind === 'trigger'" class="pick-list">
-          <button class="pick-option" type="button" @click="chooseTrigger('daily')">
-            <span class="pick-ico trigger"><SvgIcon name="clock" size="1em" /></span>
-            <span>
-              <b>每天定时</b>
-              <em>每天到设定时间触发</em>
-            </span>
-            <SvgIcon name="chevron-right" size="1em" />
-          </button>
-          <button class="pick-option" type="button" @click="chooseTrigger('interval')">
-            <span class="pick-ico interval"><SvgIcon name="rotate" size="1em" /></span>
-            <span>
-              <b>本次触发时间 + 间隔</b>
-              <em>从某个时间开始按间隔循环执行</em>
-            </span>
-            <SvgIcon name="chevron-right" size="1em" />
-          </button>
-          <button class="pick-option" type="button" @click="chooseTrigger('external_event')">
-            <span class="pick-ico external_event"><SvgIcon name="plug" size="1em" /></span>
-            <span>
-              <b>第三方通知</b>
-              <em>外部程序调用 Webhook 接口通知 LitePan</em>
-            </span>
-            <SvgIcon name="chevron-right" size="1em" />
-          </button>
-          <button class="pick-option" type="button" @click="chooseTrigger('offline_download')">
-            <span class="pick-ico offline_download"><SvgIcon name="cloud-arrow-down" size="1em" /></span>
-            <span>
-              <b>离线下载完成</b>
-              <em>指定目录或其子目录中的离线任务完成后触发</em>
-            </span>
-            <SvgIcon name="chevron-right" size="1em" />
-          </button>
+        <div v-if="pickerKind === 'trigger'" class="action-picker trigger-picker">
+          <div class="action-picker__scroll">
+            <template v-for="group in triggerGroups" :key="group.name">
+              <div class="action-picker__group-title">{{ group.name }}</div>
+              <div class="action-picker__grid">
+                <button
+                  v-for="item in group.items"
+                  :key="item.value"
+                  class="action-cell"
+                  type="button"
+                  @click="chooseTrigger(item.value)"
+                  @mouseenter="setTriggerInfo(item)"
+                  @mouseleave="resetTriggerInfo"
+                  @focus="setTriggerInfo(item)"
+                  @blur="resetTriggerInfo"
+                  @touchstart.passive="setTriggerInfo(item)"
+                >
+                  <span class="pick-ico action-cell__ico" :class="item.value"><SvgIcon :name="item.icon" size="1em" /></span>
+                  <span class="action-cell__name">{{ item.label }}</span>
+                </button>
+              </div>
+            </template>
+          </div>
+          <div class="action-picker__info">
+            <template v-if="triggerInfo">
+              <span class="pick-ico action-picker__info-ico" :class="triggerInfo.value"><SvgIcon :name="triggerInfo.icon" size="1em" /></span>
+              <span class="action-picker__info-text"><b>{{ triggerInfo.label }}</b>{{ triggerInfo.desc }}</span>
+            </template>
+            <span v-else class="action-picker__info-text action-picker__info-text--hint">悬停或触摸触发方式查看说明</span>
+          </div>
         </div>
         <div v-else class="action-picker">
           <div class="action-picker__scroll">
@@ -459,6 +456,23 @@
               <div class="field-tip">该账号中，目标为此目录或其任意子目录的离线任务完成后触发。</div>
             </div>
           </template>
+          <template v-else-if="form.trigger_type === 'advanced'">
+            <div class="cfg-row">
+              <label>执行周期</label>
+              <AutomationAdvancedSchedule
+                v-model:mode="form.trigger_config.schedule_mode"
+                v-model:weekdays="form.trigger_config.weekdays"
+                v-model:month-days="form.trigger_config.month_days"
+              />
+            </div>
+            <div class="cfg-row">
+              <label>触发时间</label>
+              <button class="time-btn" type="button" @click="openTimePicker">
+                <SvgIcon name="clock" size="1em" />
+                {{ form.trigger_config.time || '请选择时间' }}
+              </button>
+            </div>
+          </template>
           <template v-else>
           <div class="cfg-row">
             <label>{{ form.trigger_type === 'daily' ? '每天触发时间' : '首次触发时间' }}</label>
@@ -522,11 +536,11 @@
           </template>
           <template v-else-if="isEmbyScopedAction(configAction)">
             <div class="cfg-row">
-              <label>Emby配置</label>
+              <label>Emby/Jellyfin 配置</label>
               <AppSelect
                 v-model="configAction.params.emby_id"
                 :options="embyConfigOptions"
-                placeholder="请选择 Emby 配置"
+                placeholder="请选择 Emby/Jellyfin 配置"
                 @update:model-value="embyId => onEmbyConfigChange(configAction, embyId)"
               />
             </div>
@@ -543,10 +557,31 @@
                 :placeholder="embyLibrariesLoading ? '正在加载媒体库...' : '请选择媒体库'"
                 @update:model-value="libraryId => onEmbyLibraryChange(configAction, libraryId)"
               />
-              <div class="field-tip">媒体库列表从 Emby 实时拉取，仅在配置该动作时按需加载。</div>
+              <div class="field-tip">媒体库列表从 Emby/Jellyfin 实时拉取，仅在配置该动作时按需加载。</div>
               <button class="inline-link-btn" type="button" :disabled="embyLibrariesLoading || !configAction.params.emby_id" @click="ensureEmbyLibrariesLoaded(true)">
                 {{ embyLibrariesLoading ? '加载中...' : '刷新媒体库列表' }}
               </button>
+            </div>
+          </template>
+          <template v-else-if="isFnosAction(configAction)">
+            <div class="cfg-row">
+              <label>媒体库</label>
+              <AppSelect
+                v-model="configAction.params.library_id"
+                :options="fnosLibraryOptions"
+                :disabled="fnosLibrariesLoading || !options.fnos_management_ready"
+                :placeholder="fnosLibrariesLoading ? '正在加载媒体库...' : options.fnos_management_ready ? '请选择媒体库' : '请先配置飞牛管理权限'"
+                @update:model-value="libraryId => onFnosLibraryChange(configAction, libraryId)"
+              />
+              <div class="field-tip">媒体库列表从飞牛影视实时拉取；管理账号只用于执行这两个动作。</div>
+              <button class="inline-link-btn" type="button" :disabled="fnosLibrariesLoading || !options.fnos_management_ready" @click="ensureFnosLibrariesLoaded(true)">
+                {{ fnosLibrariesLoading ? '加载中...' : '刷新媒体库列表' }}
+              </button>
+            </div>
+            <div v-if="configAction.type === 'fnos_refresh_metadata'" class="cfg-row">
+              <label>刷新方式</label>
+              <AppSelect v-model="configAction.params.refresh_mode" :options="fnosRefreshModeOptions" />
+              <div class="field-tip">日常联动建议仅补充缺失信息；元数据错误时再替换全部。</div>
             </div>
           </template>
         </div>
@@ -585,7 +620,6 @@ import {
 } from 'vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppBadge from '@/components/base/AppBadge.vue'
-import AppModal from '@/components/base/AppModal.vue'
 import AppPlainModal from '@/components/base/AppPlainModal.vue'
 import AppSelect from '@/components/base/AppSelect.vue'
 import FolderPickerModal from '@/components/file/FolderPickerModal.vue'
@@ -593,6 +627,7 @@ import AdminEnableToggle from '@/components/admin/AdminEnableToggle.vue'
 import AdminRowActions from '@/components/admin/AdminRowActions.vue'
 import AdminRunStatusCell from '@/components/admin/AdminRunStatusCell.vue'
 import AdminTableActionBtn from '@/components/admin/AdminTableActionBtn.vue'
+import AutomationAdvancedSchedule from '@/components/admin/AutomationAdvancedSchedule.vue'
 import TimeWheelPicker from '../base/TimeWheelPicker.vue'
 import { confirm } from '../../composables/useConfirm'
 import { findDustTarget, useDustRemoval } from '../../composables/useDustRemoval'
@@ -614,6 +649,7 @@ import {
   validateAutomationRule
 } from '../../api/automation'
 import { fetchEmbyLibraries } from '../../api/emby'
+import { fetchFnosLibraries } from '../../api/fnos'
 import { formatTime } from '../../utils/format'
 import '@/styles/admin-table.css'
 import SvgIcon from "@/components/icons/SvgIcon.vue";
@@ -630,12 +666,15 @@ const expandedRunIds = ref(new Set())
 const runsDrawerVisible = ref(false)
 const runsLoading = ref(false)
 const accounts = ref([])
-const emptyOptions = () => ({ organize_tasks: [], strm_tasks: [], emby_configs: [] })
+const emptyOptions = () => ({ organize_tasks: [], strm_tasks: [], emby_configs: [], fnos_management_ready: false })
 const options = ref(emptyOptions())
 const embyLibraries = ref([])
 const embyLibrariesLoading = ref(false)
 const embyLibrariesLoaded = ref(false)
 const embyLibrariesConfigID = ref('')
+const fnosLibraries = ref([])
+const fnosLibrariesLoading = ref(false)
+const fnosLibrariesLoaded = ref(false)
 const validationIssues = ref([])
 const validationOk = ref(false)
 const timePickerVisible = ref(false)
@@ -662,6 +701,22 @@ const dragGhost = reactive({
   y: 0,
   width: 0
 })
+
+const normalizeEmbyActionParams = params => ({
+  emby_id: String(params.emby_id || defaultEmbyConfig()?.id || ''),
+  mode: params.mode === 'library' ? 'library' : 'global',
+  library_id: String(params.library_id || ''),
+  library_name: String(params.library_name || '')
+})
+
+const canApplyEmbyAction = action => Boolean(findEmbyConfig(action?.params?.emby_id)?.emby_url) && (
+  action?.params?.mode !== 'library' || Boolean(String(action?.params?.library_id || '').trim())
+)
+
+const embyScopedActionDefinition = {
+  normalize: normalizeEmbyActionParams,
+  canApply: canApplyEmbyAction
+}
 let validationTimer = null
 let validationSeq = 0
 let rulesRefreshTimer = null
@@ -677,6 +732,24 @@ const form = reactive({
   status: 'running',
   actions: []
 })
+
+const triggerGroups = [
+  {
+    name: '时间触发',
+    items: [
+      { value: 'daily', label: '每天定时', icon: 'clock', desc: '每天在指定时间自动启动联动' },
+      { value: 'interval', label: '时间 + 间隔', icon: 'rotate', desc: '从指定时间开始，按小时周期循环执行' },
+      { value: 'advanced', label: '高级定时', icon: 'clock-rotate-left', desc: '按每周星期或每月日期，在指定时间执行' }
+    ]
+  },
+  {
+    name: '事件触发',
+    items: [
+      { value: 'external_event', label: '第三方通知', icon: 'plug', desc: '外部程序调用 Webhook 接口时触发' },
+      { value: 'offline_download', label: '离线下载完成', icon: 'cloud-arrow-down', desc: '指定目录或其子目录中的离线任务完成后触发' }
+    ]
+  }
+]
 
 const ACTION_DEFINITIONS = {
   cache_clear: {
@@ -746,39 +819,49 @@ const ACTION_DEFINITIONS = {
   },
   emby_refresh: {
     group: 'media',
-    label: 'Emby刷库',
-    optionLabel: 'Emby全局刷库',
+    label: 'Emby/JF 扫库',
+    optionLabel: 'Emby/JF 扫库',
     icon: 'server',
-    desc: '通知 Emby 扫描全部媒体库，或只扫描指定媒体库',
-    normalize: params => ({
-      emby_id: String(params.emby_id || defaultEmbyConfig()?.id || ''),
-      mode: params.mode === 'library' ? 'library' : 'global',
-      library_id: String(params.library_id || ''),
-      library_name: String(params.library_name || '')
-    }),
-    canApply: action => Boolean(findEmbyConfig(action?.params?.emby_id)?.emby_url) && (
-      action?.params?.mode !== 'library' || Boolean(String(action?.params?.library_id || '').trim())
-    ),
-    nodeTitle: action => `Emby ${embyRefreshModeLabel(action)}「${embyRefreshTargetLabel(action)}」`,
-    previewTitle: action => `Emby${embyRefreshModeLabel(action)}[${embyRefreshTargetLabel(action)}]`
+    desc: '通知 Emby/Jellyfin 扫描全部媒体库，或只扫描指定媒体库',
+    ...embyScopedActionDefinition,
+    nodeTitle: action => `Emby/JF ${embyRefreshModeLabel(action)}「${embyRefreshTargetLabel(action)}」`,
+    previewTitle: action => `Emby/JF ${embyRefreshModeLabel(action)}[${embyRefreshTargetLabel(action)}]`
   },
   emby_complete_media_info: {
     group: 'media',
-    label: 'Emby 补全媒体信息',
-    optionLabel: 'Emby 补全媒体信息',
+    label: 'Emby/JF 补媒体信息',
+    optionLabel: 'Emby/JF 补媒体信息',
     icon: 'circle-info',
-    desc: '检查媒体流信息缺失的条目，并通知 Emby 重新提取',
+    desc: '检查媒体流信息缺失的条目，并通知 Emby/Jellyfin 重新提取',
+    ...embyScopedActionDefinition,
+    nodeTitle: action => `Emby/JF 补媒体信息「${embyRefreshTargetLabel(action)}」`,
+    previewTitle: action => `Emby/JF 补媒体信息[${embyRefreshTargetLabel(action)}]`
+  },
+  fnos_scan: {
+    group: 'media',
+    label: '飞牛影视扫库',
+    optionLabel: '飞牛影视扫库',
+    icon: 'server',
+    desc: '通知飞牛影视扫描指定媒体库，让新增影片入库',
+    normalize: params => ({ library_id: String(params.library_id || ''), library_name: String(params.library_name || '') }),
+    canApply: action => Boolean(options.value.fnos_management_ready && String(action.params.library_id || '').trim()),
+    nodeTitle: action => `飞牛影视扫库「${action.params.library_name || '未选择'}」`,
+    previewTitle: action => `飞牛影视扫库[${action.params.library_name || '未选择'}]`
+  },
+  fnos_refresh_metadata: {
+    group: 'media',
+    label: '飞牛影视刷新元数据',
+    optionLabel: '飞牛影视刷新元数据',
+    icon: 'rotate',
+    desc: '通知飞牛影视刷新指定媒体库的元数据',
     normalize: params => ({
-      emby_id: String(params.emby_id || defaultEmbyConfig()?.id || ''),
-      mode: params.mode === 'library' ? 'library' : 'global',
       library_id: String(params.library_id || ''),
-      library_name: String(params.library_name || '')
+      library_name: String(params.library_name || ''),
+      refresh_mode: Number(params.refresh_mode) === 0 ? 0 : 1
     }),
-    canApply: action => Boolean(findEmbyConfig(action?.params?.emby_id)?.emby_url) && (
-      action?.params?.mode !== 'library' || Boolean(String(action?.params?.library_id || '').trim())
-    ),
-    nodeTitle: action => `Emby 补全媒体信息「${embyRefreshTargetLabel(action)}」`,
-    previewTitle: action => `Emby补全媒体信息[${embyRefreshTargetLabel(action)}]`
+    canApply: action => Boolean(options.value.fnos_management_ready && String(action.params.library_id || '').trim()),
+    nodeTitle: action => `飞牛影视刷新元数据「${action.params.library_name || '未选择'}」`,
+    previewTitle: action => `飞牛影视刷新元数据[${action.params.library_name || '未选择'}]`
   }
 }
 
@@ -816,6 +899,7 @@ const organizeTaskOptions = computed(() => options.value.organize_tasks.map(task
 
 // ---- 动作选择面板（图标矩阵）----
 const actionInfo = ref(null)
+const triggerInfo = ref(null)
 
 const actionGroups = computed(() => (
   ACTION_GROUP_ORDER
@@ -825,10 +909,14 @@ const actionGroups = computed(() => (
 
 const setActionInfo = item => { actionInfo.value = item }
 const resetActionInfo = () => { actionInfo.value = null }
+const setTriggerInfo = item => { triggerInfo.value = item }
+const resetTriggerInfo = () => { triggerInfo.value = null }
 
 // 每次打开动作选择面板时重置说明条
 watch(pickerVisible, visible => {
-  if (visible && pickerKind.value === 'action') actionInfo.value = null
+  if (!visible) return
+  if (pickerKind.value === 'action') actionInfo.value = null
+  else triggerInfo.value = null
 })
 
 const strmTaskOptions = computed(() => options.value.strm_tasks.map(task => ({
@@ -852,6 +940,11 @@ const embyRefreshModeOptions = [
   { value: 'library', label: '指定媒体库扫描' }
 ]
 
+const fnosRefreshModeOptions = [
+  { value: 1, label: '仅补充缺失的元数据（推荐）' },
+  { value: 0, label: '替换所有元数据' }
+]
+
 const embyConfigOptions = computed(() => (options.value.emby_configs || []).map(item => ({
   value: item.id,
   label: item.name
@@ -861,6 +954,7 @@ const embyLibraryOptions = computed(() => embyLibraries.value.map(item => ({
   value: item.id,
   label: item.name
 })))
+const fnosLibraryOptions = computed(() => fnosLibraries.value.map(item => ({ value: item.id, label: item.name })))
 
 const linkedActionItems = computed(() => (
   form.actions
@@ -892,7 +986,7 @@ const runningFlowSignature = computed(() => (
 ))
 
 const triggerTime = computed(() => (
-  form.trigger_type === 'daily'
+  form.trigger_type === 'daily' || form.trigger_type === 'advanced'
     ? form.trigger_config.time
     : form.trigger_config.start_time
 ))
@@ -904,6 +998,7 @@ const triggerNodeTitle = computed(() => {
       ? `${form.trigger_config.start_time} 起，每 ${form.trigger_config.interval_hours || 24} 小时`
       : '本次触发时间 + 间隔'
   }
+  if (form.trigger_type === 'advanced') return advancedScheduleLabel(form.trigger_config)
   if (form.trigger_type === 'external_event') {
     return form.trigger_config.event ? `收到通知：${form.trigger_config.event}` : '第三方通知'
   }
@@ -918,6 +1013,8 @@ const triggerNodeSub = computed(() => (
     ? '时间 / 间隔触发'
     : form.trigger_type === 'interval'
     ? '从指定时间开始按间隔轮询执行'
+    : form.trigger_type === 'advanced'
+    ? '按选择的星期或日期自动启动联动'
     : form.trigger_type === 'external_event'
     ? externalEventSubtitle.value
     : form.trigger_type === 'offline_download'
@@ -961,6 +1058,10 @@ const hasValidationError = computed(() => validationIssues.value.some(issue => i
 const triggerReady = computed(() => {
   if (form.trigger_type === 'daily') return Boolean(form.trigger_config.time)
   if (form.trigger_type === 'interval') return Boolean(form.trigger_config.start_time) && Number(form.trigger_config.interval_hours || 0) > 0
+  if (form.trigger_type === 'advanced') {
+    const values = form.trigger_config.schedule_mode === 'monthly' ? form.trigger_config.month_days : form.trigger_config.weekdays
+    return Boolean(form.trigger_config.time) && values.length > 0
+  }
   if (form.trigger_type === 'external_event') return Boolean(String(form.trigger_config.event || '').trim())
   if (form.trigger_type === 'offline_download') {
     return Number(form.trigger_config.account_id || 0) > 0 && Boolean(String(form.trigger_config.path || '').trim())
@@ -977,6 +1078,9 @@ const configCanApply = computed(() => {
   if (configMode.value === 'trigger' && form.trigger_type === 'offline_download') {
     return triggerReady.value
   }
+  if (configMode.value === 'trigger' && form.trigger_type === 'advanced') {
+    return triggerReady.value
+  }
   if (configMode.value === 'action' && configAction.value) {
     return actionDefinition(configAction.value.type).canApply(configAction.value)
   }
@@ -985,6 +1089,7 @@ const configCanApply = computed(() => {
 const configTitle = computed(() => {
   if (configMode.value === 'trigger') {
     if (form.trigger_type === 'daily') return '每天定时'
+    if (form.trigger_type === 'advanced') return '高级定时'
     if (form.trigger_type === 'external_event') return '第三方通知'
     if (form.trigger_type === 'offline_download') return '离线下载完成'
     return '本次触发时间 + 间隔'
@@ -1082,6 +1187,8 @@ const resetForm = () => {
   embyLibrariesLoading.value = false
   embyLibrariesLoaded.value = false
   embyLibrariesConfigID.value = ''
+  fnosLibraries.value = []
+  fnosLibrariesLoaded.value = false
   validationIssues.value = []
   validationOk.value = false
 }
@@ -1113,6 +1220,8 @@ const backToList = async () => {
 const setTriggerType = (type) => {
   form.trigger_type = type
   if (type === 'daily') {
+    form.trigger_config.start_time = ''
+  } else if (type === 'advanced') {
     form.trigger_config.start_time = ''
   } else if (type === 'interval') {
     form.trigger_config.time = ''
@@ -1179,6 +1288,7 @@ const openConfig = (mode, actionIndex = -1) => {
       normalizeEmbyScopedAction(targetAction)
       void ensureEmbyLibrariesLoaded()
     }
+    if (isFnosAction(targetAction)) void ensureFnosLibrariesLoaded()
   }
   configVisible.value = true
 }
@@ -1202,6 +1312,15 @@ const chooseTrigger = (type) => {
   openConfig('trigger')
 }
 
+const insertActionAt = (action, index) => {
+  if (index === 0 && !form.actions[0]) {
+    if (form.actions.length === 0) form.actions.push(action)
+    else form.actions[0] = action
+    return
+  }
+  form.actions.splice(Math.max(1, index), 0, action)
+}
+
 const chooseAction = (type) => {
   const action = createAction(type)
   pickerVisible.value = false
@@ -1211,15 +1330,7 @@ const chooseAction = (type) => {
     openConfig('action', -1)
     return
   }
-  if (actionInsertIndex.value === 0 && !form.actions[0]) {
-    if (form.actions.length === 0) {
-      form.actions.push(action)
-    } else {
-      form.actions[0] = action
-    }
-  } else {
-    form.actions.splice(Math.max(1, actionInsertIndex.value), 0, action)
-  }
+  insertActionAt(action, actionInsertIndex.value)
   normalizeActionConditions()
   scheduleValidation()
 }
@@ -1379,6 +1490,8 @@ const applyConfig = () => {
       toast.warning('请输入通知名称')
     } else if (configMode.value === 'trigger' && form.trigger_type === 'offline_download') {
       toast.warning('请选择离线下载监控目录')
+    } else if (configMode.value === 'trigger' && form.trigger_type === 'advanced') {
+      toast.warning('请选择执行周期和触发时间')
     } else if (configMode.value === 'action') {
       toast.warning('请完善动作配置')
     }
@@ -1387,18 +1500,11 @@ const applyConfig = () => {
   if (configMode.value === 'trigger') commitTrigger()
   if (configAction.value) ensureStrmRunMode(configAction.value)
   if (isEmbyScopedAction(configAction.value)) normalizeEmbyScopedAction(configAction.value)
+  if (isFnosAction(configAction.value)) onFnosLibraryChange(configAction.value, configAction.value.params.library_id)
   if (pendingConfigAction.value) {
     const action = pendingConfigAction.value
     const insertIndex = pendingConfigInsertIndex.value
-    if (insertIndex === 0 && !form.actions[0]) {
-      if (form.actions.length === 0) {
-        form.actions.push(action)
-      } else {
-        form.actions[0] = action
-      }
-    } else {
-      form.actions.splice(Math.max(1, insertIndex), 0, action)
-    }
+    insertActionAt(action, insertIndex)
     normalizeActionConditions()
   }
   scheduleValidation()
@@ -1412,7 +1518,7 @@ const openTimePicker = () => {
 
 const confirmTimePicker = (payload) => {
   const value = payload?.startTime || '00:00'
-  if (form.trigger_type === 'daily') {
+  if (form.trigger_type === 'daily' || form.trigger_type === 'advanced') {
     form.trigger_config.time = value
   } else {
     form.trigger_config.start_time = value
@@ -1499,7 +1605,7 @@ const ensureEmbyLibrariesLoaded = async (force = false) => {
     embyLibrariesConfigID.value = embyId
   } catch (error) {
     if (force || !embyLibrariesLoaded.value) {
-      toast.error('加载 Emby 媒体库失败: ' + getApiErrorMessage(error, '请检查 Emby 配置'))
+      toast.error('加载 Emby/Jellyfin 媒体库失败: ' + getApiErrorMessage(error, '请检查 Emby/Jellyfin 配置'))
     }
   } finally {
     embyLibrariesLoading.value = false
@@ -1532,6 +1638,27 @@ const onEmbyLibraryChange = (action, libraryId) => {
   if (!isEmbyScopedAction(action)) return
   action.params.library_id = String(libraryId || '')
   action.params.library_name = findEmbyLibraryName(action.params.library_id)
+}
+
+const isFnosAction = action => ['fnos_scan', 'fnos_refresh_metadata'].includes(action?.type)
+
+const ensureFnosLibrariesLoaded = async (force = false) => {
+  if (!options.value.fnos_management_ready || fnosLibrariesLoading.value || (fnosLibrariesLoaded.value && !force)) return
+  fnosLibrariesLoading.value = true
+  try {
+    fnosLibraries.value = await fetchFnosLibraries()
+    fnosLibrariesLoaded.value = true
+  } catch (error) {
+    toast.error('加载飞牛影视媒体库失败: ' + getApiErrorMessage(error, '请检查管理权限配置'))
+  } finally {
+    fnosLibrariesLoading.value = false
+  }
+}
+
+const onFnosLibraryChange = (action, libraryId) => {
+  if (!isFnosAction(action)) return
+  action.params.library_id = String(libraryId || '')
+  action.params.library_name = fnosLibraries.value.find(item => String(item.id) === action.params.library_id)?.name || String(action.params.library_name || '')
 }
 
 const normalizeActions = (actions) => actions.map((action, index) => ({
@@ -1706,7 +1833,7 @@ const deleteRule = async (rule) => {
 
 const embyDisplayLabel = (action) => {
   const config = findEmbyConfig(action?.params?.emby_id) || defaultEmbyConfig()
-  return config?.name || '未选择 Emby'
+  return config?.name || '未选择 Emby/Jellyfin'
 }
 
 const embyRefreshModeLabel = (action) => (
@@ -1723,9 +1850,6 @@ const embyRefreshTargetLabel = (action) => {
 }
 
 const findTaskLabel = (type, id) => {
-  if (type === 'emby_refresh') {
-    return embyDisplayLabel({ params: { emby_id: id } })
-  }
   if (!id) return '未选择'
   if (type === 'organize') {
     return options.value.organize_tasks.find(task => String(task.id) === String(id))?.name || '整理任务'
@@ -1741,6 +1865,7 @@ const triggerLabel = (rule) => {
   if (rule.trigger_type === 'interval') {
     return `${config.start_time || '00:00'} 起，每 ${config.interval_hours || 24} 小时`
   }
+  if (rule.trigger_type === 'advanced') return advancedScheduleLabel(config)
   if (rule.trigger_type === 'external_event' || rule.trigger_type === 'webhook') {
     return `收到通知：${config.event || '-'}`
   }
@@ -1749,6 +1874,17 @@ const triggerLabel = (rule) => {
     return `离线下载完成：${accountName} · ${config.path || '/'}`
   }
   return `每天 ${config.time || '00:00'}`
+}
+
+const advancedScheduleLabel = config => {
+  const time = config.time || '00:00'
+  if (config.schedule_mode === 'monthly') {
+    const days = (config.month_days || []).map(Number).sort((a, b) => a - b).join('、')
+    return `每月 ${days || '-'} 日 ${time}`
+  }
+  const names = ['一', '二', '三', '四', '五', '六', '日']
+  const days = (config.weekdays || []).map(value => names[Number(value) - 1]).filter(Boolean).join('、')
+  return `每周${days || '-'} ${time}`
 }
 
 const actionLabel = action => actionDefinition(action.type).label
@@ -2022,7 +2158,6 @@ defineExpose({
   --muted: var(--text-muted);
   --muted2: color-mix(in srgb, var(--text-muted) 72%, transparent);
   --blue: var(--brand);
-  --brand-grad: var(--brand-gradient);
   --ok: var(--success);
   --warn: var(--warning);
   --bad: var(--danger);
@@ -3149,59 +3284,6 @@ defineExpose({
   --warn: var(--warning);
 }
 
-.modal-group {
-  padding: 2px 20px 8px;
-  color: var(--muted2);
-  font-size: 12px;
-}
-
-.pick-list {
-  padding-bottom: 14px;
-}
-
-.pick-option {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  width: 100%;
-  padding: 12px 20px;
-  border: 0;
-  background: var(--panel);
-  color: var(--ink);
-  cursor: pointer;
-  text-align: left;
-}
-
-.pick-option:hover {
-  background: var(--soft);
-}
-
-.pick-option > span:nth-child(2) {
-  flex: 1;
-  min-width: 0;
-}
-
-.pick-option b,
-.pick-option em {
-  display: block;
-  font-style: normal;
-}
-
-.pick-option b {
-  font-size: 14.5px;
-}
-
-.pick-option em {
-  margin-top: 2px;
-  color: var(--muted2);
-  font-size: 12px;
-}
-
-.pick-option > i, .pick-option > .lp-svg-icon {
-  color: var(--muted2);
-  font-size: 13px;
-}
-
 .pick-ico {
   display: inline-grid;
   place-items: center;
@@ -3215,7 +3297,8 @@ defineExpose({
 }
 
 .pick-ico.trigger,
-.pick-ico.interval {
+.pick-ico.interval,
+.pick-ico.advanced {
   background: color-mix(in srgb, #6366f1 16%, var(--panel));
   color: #6366f1;
 }

@@ -41,7 +41,7 @@ func (s *Server) serveMove(w http.ResponseWriter, r *http.Request) {
 		created = true
 	} else if overwrite {
 		if err := s.fs.RemoveAll(ctx, dst); err != nil {
-			s.log.Warn("webdav move overwrite delete", "dst", dst, "err", err)
+			s.log.Warn("WebDAV 移动覆盖时删除目标失败", "dst", dst, "err", err)
 			writeMoveErr(w, err)
 			return
 		}
@@ -51,7 +51,7 @@ func (s *Server) serveMove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.fs.Rename(ctx, src, dst); err != nil {
-		s.log.Warn("webdav move", "src", src, "dst", dst, "err", err)
+		s.log.Warn("WebDAV 移动失败", "src", src, "dst", dst, "err", err)
 		writeMoveErr(w, err)
 		return
 	}

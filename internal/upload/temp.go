@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"litepan/pkg/safego"
 )
 
 const (
@@ -126,14 +128,17 @@ func (m *Manager) StartTempCleanup(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				n, err := m.CleanupOrphanTempFiles(TempMaxAge)
-				if err != nil {
-					m.log.Warn("upload temp cleanup failed", "err", err)
-					continue
-				}
-				if n > 0 {
-					m.log.Info("upload temp cleanup done", "deleted", n)
-				}
+				// 兜住单轮崩溃：清理出错只跳过这一轮，不能让整个服务下线。
+				safego.Guard(m.log, "upload.temp_cleanup", func() {
+					n, err := m.CleanupOrphanTempFiles(TempMaxAge)
+					if err != nil {
+						m.log.Warn("上传临时文件清理失败", "err", err)
+						return
+					}
+					if n > 0 {
+						m.log.Info("上传临时文件清理完成", "deleted", n)
+					}
+				})
 			}
 		}
 	}()
@@ -141,8 +146,8 @@ func (m *Manager) StartTempCleanup(ctx context.Context) {
 
 func (m *Manager) initTempCleanup() {
 	if n, err := m.CleanupOrphanTempFiles(0); err != nil {
-		m.log.Warn("upload temp startup cleanup failed", "err", err)
+		m.log.Warn("上传临时文件启动清理失败", "err", err)
 	} else if n > 0 {
-		m.log.Info("upload temp startup cleanup done", "deleted", n)
+		m.log.Info("上传临时文件启动清理完成", "deleted", n)
 	}
 }

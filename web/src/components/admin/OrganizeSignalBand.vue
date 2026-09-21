@@ -39,8 +39,6 @@ const statRows = computed(() => [
   { key: "error", label: "有失败", value: props.taskError, tone: "warn" as const },
 ]);
 
-const liveTag = computed(() => (props.taskRunning > 0 ? `执行中 ${props.taskRunning} 个` : ""));
-
 // 第二列状态条：总数 + 各状态分段（与 STRM 页同一套样式）。
 const barSegments = computed(() => [
   { key: "ok", label: "执行中", value: Math.max(0, props.taskRunning - props.taskError), tone: "success" as const },
@@ -48,9 +46,8 @@ const barSegments = computed(() => [
   { key: "rest", label: "空闲", value: Math.max(0, props.taskTotal - props.taskRunning), tone: "muted" as const },
 ]);
 
-// 折叠条右侧显示累计已整理文件数。
-// 汇总口径：各任务最近一次运行结果相加，不是同一轮、也不是历史累计。
-// 中列只保留 2 行：整理结果（已整理/跳过合并）+ 完成时间；刷新变成行内小图标。
+// 折叠条右侧显示累计已整理文件数，口径是各任务最近一次运行结果相加，不是同一轮或历史累计；
+// 中列只保留整理结果与完成时间两行，刷新是行内小图标。
 const outputRows = computed(() => [
   {
     key: "result",
@@ -102,7 +99,6 @@ defineExpose({ reloadSettings: loadLimits });
     :stats="statRows"
     bar-label="任务状态"
     :bar-segments="barSegments"
-    :live-tag="liveTag"
     setup-title="整理设置"
     :setup-rows="settingRows"
     @open-settings="emit('open-settings')"

@@ -15,12 +15,11 @@ import (
 )
 
 type tmdbSeasonDetail struct {
-	Name         string
-	Overview     string
-	PosterPath   string
-	AirDate      string
-	SeasonNumber int
-	Episodes     []tmdbEpisodeDetail
+	Name       string
+	Overview   string
+	PosterPath string
+	AirDate    string
+	Episodes   []tmdbEpisodeDetail
 }
 
 type tmdbEpisodeDetail struct {
@@ -68,12 +67,12 @@ func (s *Service) writeTVExtras(ctx context.Context, client *tmdb.Client, g work
 		interval = 300 * time.Millisecond
 	}
 
+	seasonDirs := listLocalSeasonDirs(g.absDir)
 	// 剧集根季海报（seasonXX-poster.jpg）
-	if err := s.writeSeasonPosters(ctx, client, g, info.TMDBID, overwrite); err != nil {
+	if err := s.writeSeasonPosters(ctx, client, g, info.TMDBID, overwrite, seasonDirs); err != nil {
 		return err
 	}
 
-	seasonDirs := listLocalSeasonDirs(g.absDir)
 	// 无 Season 目录时，按分集文件名里的季号补齐
 	seasonNums := map[int]string{} // season -> abs season dir (可空表示写在剧集根旁的虚拟季，仅写 seasonXX-poster)
 	for _, d := range seasonDirs {
@@ -232,14 +231,10 @@ func fetchSeasonDetail(ctx context.Context, client *tmdb.Client, tmdbID string, 
 		return nil, err
 	}
 	out := &tmdbSeasonDetail{
-		Name:         strings.TrimSpace(anyString(m["name"])),
-		Overview:     strings.TrimSpace(anyString(m["overview"])),
-		PosterPath:   strings.TrimSpace(anyString(m["poster_path"])),
-		AirDate:      strings.TrimSpace(anyString(m["air_date"])),
-		SeasonNumber: season,
-	}
-	if n := asInt(m["season_number"]); n != nil {
-		out.SeasonNumber = *n
+		Name:       strings.TrimSpace(anyString(m["name"])),
+		Overview:   strings.TrimSpace(anyString(m["overview"])),
+		PosterPath: strings.TrimSpace(anyString(m["poster_path"])),
+		AirDate:    strings.TrimSpace(anyString(m["air_date"])),
 	}
 	rawEps, _ := m["episodes"].([]any)
 	for _, item := range rawEps {

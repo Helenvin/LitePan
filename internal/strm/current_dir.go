@@ -51,9 +51,9 @@ type currentDirWork struct {
 	skippedConflict int64
 }
 
-func (s *Service) CheckCurrentDirectoryStatus(ctx context.Context, accountID int64, parentID, currentPath string, items []CurrentDirectoryEntry) (CurrentDirectoryStatus, error) {
+func (s *Service) CheckCurrentDirectoryStatus(ctx context.Context, accountID int64, parentID, currentPath string, currentDirs []string, items []CurrentDirectoryEntry) (CurrentDirectoryStatus, error) {
 	var status CurrentDirectoryStatus
-	work, err := s.prepareCurrentDirectoryWork(ctx, accountID, parentID, currentPath, items)
+	work, err := s.prepareCurrentDirectoryWork(ctx, accountID, parentID, currentPath, currentDirs, items)
 	if err != nil {
 		return status, err
 	}
@@ -99,12 +99,12 @@ func (s *Service) CheckCurrentDirectoryStatus(ctx context.Context, accountID int
 	return status, nil
 }
 
-func (s *Service) GenerateCurrentDirectory(ctx context.Context, accountID int64, parentID, currentPath string, items []CurrentDirectoryEntry) (CurrentDirectoryResult, error) {
+func (s *Service) GenerateCurrentDirectory(ctx context.Context, accountID int64, parentID, currentPath string, currentDirs []string, items []CurrentDirectoryEntry) (CurrentDirectoryResult, error) {
 	var out CurrentDirectoryResult
 	if s == nil || s.repo == nil {
 		return out, domain.Errf(domain.CodeNotImplement)
 	}
-	work, err := s.prepareCurrentDirectoryWork(ctx, accountID, parentID, currentPath, items)
+	work, err := s.prepareCurrentDirectoryWork(ctx, accountID, parentID, currentPath, currentDirs, items)
 	if err != nil {
 		return out, err
 	}
@@ -139,7 +139,7 @@ func (s *Service) GenerateCurrentDirectory(ctx context.Context, accountID int64,
 		seen[relSlash] = struct{}{}
 		if _, migrateErr := MigrateLegacyISOStrmFile(work.root, work.outputFolder, item.relDirs, item.fileName, item.fileID, work.scanCfg.ISOFilenameEnabled); migrateErr != nil {
 			if s.log != nil {
-				s.log.Warn("strm current dir legacy ISO migration failed", "path", relSlash, "err", migrateErr)
+				s.log.Warn("STRM 当前目录旧版 ISO 迁移失败", "path", relSlash, "err", migrateErr)
 			}
 			continue
 		}
@@ -154,7 +154,7 @@ func (s *Service) GenerateCurrentDirectory(ctx context.Context, accountID int64,
 		created, updated, writeErr := writeStrmFile(work.root, relPath, url, work.task.ScanMode)
 		if writeErr != nil {
 			if s.log != nil {
-				s.log.Warn("strm current dir write failed", "path", relSlash, "err", writeErr)
+				s.log.Warn("STRM 当前目录写入失败", "path", relSlash, "err", writeErr)
 			}
 			continue
 		}
@@ -203,7 +203,7 @@ func (s *Service) GenerateCurrentDirectory(ctx context.Context, accountID int64,
 	return out, nil
 }
 
-func (s *Service) prepareCurrentDirectoryWork(ctx context.Context, accountID int64, parentID, currentPath string, items []CurrentDirectoryEntry) (*currentDirWork, error) {
+func (s *Service) prepareCurrentDirectoryWork(ctx context.Context, accountID int64, parentID, currentPath string, currentDirs []string, items []CurrentDirectoryEntry) (*currentDirWork, error) {
 	if s == nil || s.repo == nil {
 		return nil, domain.Errf(domain.CodeNotImplement)
 	}
@@ -211,7 +211,7 @@ func (s *Service) prepareCurrentDirectoryWork(ctx context.Context, accountID int
 	if err != nil {
 		return nil, err
 	}
-	task, relDirs := matchTaskForDisplayPath(tasks, currentPath)
+	task, relDirs := matchTaskForCurrentDirectory(tasks, currentPath, currentDirs)
 	if task == nil {
 		return nil, nil
 	}
@@ -309,6 +309,41 @@ func relativeDisplayDirs(taskPath, currentPath string) ([]string, bool) {
 		return nil, true
 	}
 	return strings.Split(rel, "/"), true
+}
+
+// matchTaskForCurrentDirectory 找到当前目录命中的任务，并算出它相对该任务根的目录段。
+//
+// 优先用前端传上来的「目录段数组」：显示路径是用 "/" 拼起来的字符串，目录名自带
+// 斜杠时（例：一个名为 abc/def/ghi 的目录）和三层目录长得一模一样，按字符串相减
+// 会把一个目录名拆成多层，本地就会建出多层目录、并在那个错目录里删文件。
+// 拿不到数组时才退回按显示路径相减（兼容旧前端）。
+func matchTaskForCurrentDirectory(tasks []*domain.StrmTask, currentPath string, currentDirs []string) (*domain.StrmTask, []string) {
+	if len(currentDirs) > 0 {
+		return matchTaskForDirSegments(tasks, currentDirs)
+	}
+	return matchTaskForDisplayPath(tasks, currentPath)
+}
+
+// matchTaskForDirSegments 用目录段数组匹配任务：命中任务根前缀最深的那个优先。
+func matchTaskForDirSegments(tasks []*domain.StrmTask, dirs []string) (*domain.StrmTask, []string) {
+	var best *domain.StrmTask
+	var bestRel []string
+	bestDepth := -1
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		rel, ok := segmentsBelowRoot(dirs, splitRemotePath(task.Path))
+		if !ok {
+			continue
+		}
+		if depth := len(dirs) - len(rel); depth > bestDepth {
+			bestDepth = depth
+			best = task
+			bestRel = append([]string{}, rel...)
+		}
+	}
+	return best, bestRel
 }
 
 func matchTaskForDisplayPath(tasks []*domain.StrmTask, currentPath string) (*domain.StrmTask, []string) {

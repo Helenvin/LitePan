@@ -11,15 +11,15 @@ func LooksLikeWorkDirName(name string) bool {
 	if IsGenericMediaDir(name) || IsSeasonDirName(name) || IsEpisodeRangeDirName(name) {
 		return false
 	}
-	if isCollectionContainerDir(name, nil) {
+	if isCollectionContainerDir(name) {
 		return false
 	}
 	parsed := NormalizeParsedMedia(ParseDirName(name))
 	return parsed.Title != ""
 }
 
-func IsCollectionContainerDir(name string, childDirNames []string) bool {
-	return isCollectionContainerDir(name, childDirNames)
+func IsCollectionContainerDir(name string) bool {
+	return isCollectionContainerDir(name)
 }
 
 func IsSpecialContentDirName(name string) bool {
@@ -279,23 +279,7 @@ func BuildTVShowMatchAttempts(groupTitle string, groupYear *int, dirName string)
 	mergedTitle := PickBestTitleForTMDB(dirTitle, groupTitle)
 
 	attempts := make([]TMDBMatchAttempt, 0, 4)
-	seen := map[string]struct{}{}
-	add := func(title string, year *int, source string) {
-		t := strings.TrimSpace(title)
-		if t == "" {
-			return
-		}
-		yKey := "nil"
-		if year != nil {
-			yKey = strconv.Itoa(*year)
-		}
-		key := strings.ToLower(t) + "|" + yKey
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		attempts = append(attempts, TMDBMatchAttempt{Title: t, Year: year, Source: source})
-	}
+	add := tmdbAttemptAdder(&attempts)
 	add(mergedTitle, searchYear, "作品")
 	if dirTitle != "" && ScoreTitleForTMDB(dirTitle) >= 0.45 {
 		add(dirTitle, searchYear, "目录")

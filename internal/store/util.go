@@ -51,10 +51,13 @@ func tsValue(t time.Time) any {
 	return t.UTC().Format(tsLayout)
 }
 
-// wrapDB 把底层数据库错误归一为结构化 AppError。
+// wrapDB 把底层数据库错误归一为结构化 AppError，已是领域错误时原样返回，避免 NOT_FOUND 降级。
 func wrapDB(err error) error {
 	if err == nil {
 		return nil
+	}
+	if _, ok := domain.AsAppError(err); ok {
+		return err
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Errf(domain.CodeNotFound)

@@ -171,8 +171,7 @@ func PickTMDBMatchForYear(results []map[string]any, expectedYear *int, mediaType
 	return results[0]
 }
 
-// PickTMDBSearchMatchForYear 先走严格标题兼容匹配。只有在同时存在明确年份且年份一致时，
-// 才允许 TMDB 搜索命中的译名/别名候选放宽标题校验；不再仅凭“唯一候选”自动接受。
+// PickTMDBSearchMatchForYear 先做严格标题匹配，只有年份明确且一致时才放宽译名/别名候选的标题校验。
 func PickTMDBSearchMatchForYear(results []map[string]any, expectedYear *int, mediaType, queryTitle string) map[string]any {
 	if selected := PickTMDBMatchForYear(results, expectedYear, mediaType, queryTitle); selected != nil {
 		return selected
@@ -272,23 +271,7 @@ func BuildTMDBMatchAttempts(groupTitle string, groupYear *int, dirName string, f
 	}
 
 	attempts := make([]TMDBMatchAttempt, 0, 8)
-	seen := map[string]struct{}{}
-	add := func(title string, year *int, source string) {
-		t := strings.TrimSpace(title)
-		if t == "" {
-			return
-		}
-		yKey := "nil"
-		if year != nil {
-			yKey = strconv.Itoa(*year)
-		}
-		key := strings.ToLower(t) + "|" + yKey
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		attempts = append(attempts, TMDBMatchAttempt{Title: t, Year: year, Source: source})
-	}
+	add := tmdbAttemptAdder(&attempts)
 
 	add(mergedTitle, mergedYear, "合并")
 	if fileTitle != "" {
@@ -426,3 +409,24 @@ var (
 	docuPrefixRe = regexp.MustCompile(`(舞台剧|纪录片|歌剧|幕后|制作纪录)`)
 	tokenSplitRe = regexp.MustCompile(`[\s._\-]+`)
 )
+
+// tmdbAttemptAdder 保留首次候选及其来源，按标题和年份去重。
+func tmdbAttemptAdder(attempts *[]TMDBMatchAttempt) func(string, *int, string) {
+	seen := map[string]struct{}{}
+	return func(title string, year *int, source string) {
+		t := strings.TrimSpace(title)
+		if t == "" {
+			return
+		}
+		yKey := "nil"
+		if year != nil {
+			yKey = strconv.Itoa(*year)
+		}
+		key := strings.ToLower(t) + "|" + yKey
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		*attempts = append(*attempts, TMDBMatchAttempt{Title: t, Year: year, Source: source})
+	}
+}

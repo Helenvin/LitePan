@@ -10,10 +10,11 @@ import (
 )
 
 type refreshSchedule struct {
-	accountID int64
-	name      string
-	status    domain.AuthStatus
-	next      time.Time
+	accountID  int64
+	name       string
+	driverType string
+	status     domain.AuthStatus
+	next       time.Time
 }
 
 func (s *Service) ensureSchedule(ctx context.Context, accountID int64) {
@@ -71,6 +72,7 @@ func (s *Service) refreshSchedule(ctx context.Context, accountID int64, now time
 		return plan
 	}
 	plan.name = acc.Name
+	plan.driverType = acc.DriverType
 	drv, ok := driver.New(acc.DriverType)
 	if !ok {
 		return plan

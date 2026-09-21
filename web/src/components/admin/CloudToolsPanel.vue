@@ -27,7 +27,7 @@ const { runLoad } = useSettingsLoad();
 
 const searchQuery = ref("");
 const searchInputRef = ref<HTMLInputElement | null>(null);
-const cardTitles = ["Emby 反代", "飞牛影视反代", "115 STRM 增强", "夸克 STRM 接管", "AI 辅助识别", "目录整理分类", "从服务器上传", "垃圾清理工具", "视频海报生成"];
+const cardTitles = ["Emby/Jellyfin 反代", "飞牛影视反代", "115 STRM 增强", "夸克 STRM 接管", "AI 辅助识别", "目录整理分类", "从服务器上传", "垃圾清理工具", "视频海报生成"];
 
 function matches(title: string) {
   return containsQuery(title, searchQuery.value);
@@ -117,7 +117,7 @@ async function clearCache() {
     <div v-if="searchOpen" class="tool-search">
       <div class="tool-search__mask" @click="closeSearch" />
       <div class="tool-search__box">
-        <input ref="searchInputRef" v-model="searchQuery" placeholder="搜索工具，如：飞牛、Emby、反代" @keydown.esc="closeSearch" />
+        <input ref="searchInputRef" v-model="searchQuery" placeholder="搜索工具，如：飞牛、Emby、Jellyfin、反代" @keydown.esc="closeSearch" />
         <button type="button" aria-label="关闭搜索" @click="closeSearch"><SvgIcon name="xmark" :size="14" /></button>
       </div>
     </div>

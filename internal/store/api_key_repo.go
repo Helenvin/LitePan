@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
-	"strings"
+	"errors"
 	"time"
 
 	"litepan/internal/domain"
@@ -111,7 +111,7 @@ func scanApiKey(s apiKeyScanner) (*domain.ApiKey, error) {
 		&k.ID, &k.Name, &k.KeyHash, &k.KeyPrefix, &k.KeySuffix, &k.KeyType, &k.Status,
 		&expires, &lastUsed, &k.Note, &created, &updated,
 	); err != nil {
-		if strings.Contains(err.Error(), "no rows") {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.Errf(domain.CodeNotFound)
 		}
 		return nil, err

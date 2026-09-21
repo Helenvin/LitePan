@@ -126,6 +126,11 @@ const totalFuseCount = computed(() => fuseMounts.value.length);
 
 const recentErrorCount = computed(() => logStats.value?.recent_unacknowledged_errors ?? 0);
 const recentErrorTotal = computed(() => logStats.value?.recent_errors ?? 0);
+// 日志量极大时后端会按读取预算提前结束统计，此时数字只是下界，加「+」避免当成精确值。
+const logTotalText = computed(() => {
+  const total = logStats.value?.total ?? 0;
+  return logStats.value?.truncated ? `${total}+` : String(total);
+});
 const systemStatus = computed(() => {
   if (authErrorAccountCount.value > 0) {
     return { label: "账号需要重新授权", tone: "danger", icon: "triangle-exclamation" };
@@ -586,7 +591,7 @@ onMounted(() => {
 
             <div class="log-snapshot">
               <div>
-                <strong>{{ logStats?.total ?? 0 }}</strong>
+                <strong>{{ logTotalText }}</strong>
                 <span>日志总数</span>
               </div>
               <div>
@@ -646,34 +651,10 @@ onMounted(() => {
   background: var(--surface);
   box-shadow: var(--shadow-soft);
 }
-
-
-
-
-
-
-
-
-
-
-.dashboard-eyebrow {
-  margin: 0 0 3px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 700;
-}
 .dashboard-panel h3 {
   margin: 0;
   color: var(--text);
 }
-
-
-
-
-
-
-
-
 
 .dashboard-warning {
   display: flex;
@@ -702,11 +683,6 @@ onMounted(() => {
   cursor: not-allowed;
   opacity: 0.6;
 }
-
-
-
-
-
 
 .dashboard-layout {
   display: grid;
@@ -1009,29 +985,14 @@ onMounted(() => {
   color: var(--success);
 }
 @media (max-width: 1180px) {
-  .overview-cards,
-  .dashboard-hero__metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 
   .dashboard-layout {
     grid-template-columns: 1fr;
   }
 }
 @media (max-width: 760px) {
-  .dashboard-hero,
   .dashboard-layout {
     grid-template-columns: 1fr;
-  }
-
-  .overview-cards {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-hero__metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-    gap: 10px;
   }
 
   .hero-metric {
@@ -1044,15 +1005,6 @@ onMounted(() => {
 
   .account-row {
     grid-template-columns: 42px minmax(0, 1fr);
-  }
-
-  .overview-card--cache {
-    grid-template-columns: 44px minmax(0, 1fr);
-  }
-
-  .overview-card__action-layout {
-    grid-column: 2;
-    justify-self: start;
   }
 
   .method-tag,

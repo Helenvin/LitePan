@@ -86,7 +86,7 @@ func PlannerTMDBLanguage(plannerSettings map[string]any) string {
 	return "zh-CN"
 }
 
-// PlannerTMDBAPIHost 返回 TMDB API 反代主域名（未配置返回空，由 tmdb.Client 回落环境变量/官方默认）。
+// PlannerTMDBAPIHost 返回 TMDB API 反代主域名，未配置返回空。
 func PlannerTMDBAPIHost(plannerSettings map[string]any) string {
 	return strings.TrimSpace(stringFromAny(plannerSettings["mo_tmdb_api_host"]))
 }
@@ -97,11 +97,15 @@ func PlannerTMDBImageHost(plannerSettings map[string]any) string {
 }
 
 func TmdbProxyFromSettings(settings map[string]any) tmdb.ProxyConfig {
+	return proxyConfigFrom(settings, "mo_")
+}
+
+func proxyConfigFrom(settings map[string]any, prefix string) tmdb.ProxyConfig {
 	return tmdb.ProxyConfig{
-		Enabled:  rules.SettingBool(settings["mo_proxy_enabled"], false),
-		URL:      stringFromAny(settings["mo_proxy_url"]),
-		Username: stringFromAny(settings["mo_proxy_username"]),
-		Password: stringFromAny(settings["mo_proxy_password"]),
+		Enabled:  rules.SettingBool(settings[prefix+"proxy_enabled"], false),
+		URL:      stringFromAny(settings[prefix+"proxy_url"]),
+		Username: stringFromAny(settings[prefix+"proxy_username"]),
+		Password: stringFromAny(settings[prefix+"proxy_password"]),
 	}
 }
 

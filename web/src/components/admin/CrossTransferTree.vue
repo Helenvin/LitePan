@@ -44,7 +44,7 @@ import SvgIcon from "@/components/icons/SvgIcon.vue";
 
 defineOptions({ name: 'CrossTransferTree' })
 
-const props = defineProps({
+defineProps({
   nodes: { type: Array, default: () => [] },
   mode: { type: String, default: 'src' },
   depth: { type: Number, default: 0 }
