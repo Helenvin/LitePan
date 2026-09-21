@@ -29,6 +29,7 @@ type Driver struct {
 	mu             sync.Mutex
 	token          string
 	refresh        string
+	uid            string
 	offlineMissing map[string]int
 }
 
@@ -217,4 +218,8 @@ var (
 	_ driver.OfflineDownloadProvider  = (*Driver)(nil)
 	_ driver.OfflineURLDownloader     = (*Driver)(nil)
 	_ driver.OfflineTaskRefresher     = (*Driver)(nil)
+	_ driver.ShareCapabilityProvider  = (*Driver)(nil)
+	_ driver.ShareCreator             = (*Driver)(nil)
+	_ driver.ShareLister              = (*Driver)(nil)
+	_ driver.ShareUpdater             = (*Driver)(nil)
 )

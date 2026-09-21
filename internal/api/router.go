@@ -29,6 +29,7 @@ import (
 	"litepan/internal/cache"
 	"litepan/internal/cacheretention"
 	"litepan/internal/classifyorganize"
+	"litepan/internal/cloudshare"
 	"litepan/internal/coverextract"
 	"litepan/internal/crosstransfer"
 	"litepan/internal/domain"
@@ -69,6 +70,7 @@ type Deps struct {
 	Favorites         *favorites.Service
 	Uploads           *upload.Manager
 	OfflineDownloads  *offlinedownload.Service
+	CloudShares       *cloudshare.Service
 	Playback          *playback.Service
 	Strm              *strm.Service
 	StrmDelete        *strmdelete.Service
@@ -111,6 +113,7 @@ type Handler struct {
 	favorites         *favorites.Service
 	uploads           *upload.Manager
 	offlineDownloads  *offlinedownload.Service
+	cloudShares       *cloudshare.Service
 	playback          *playback.Service
 	strm              *strm.Service
 	strmDelete        *strmdelete.Service
@@ -162,6 +165,7 @@ func NewRouter(d Deps) http.Handler {
 		favorites:         d.Favorites,
 		uploads:           d.Uploads,
 		offlineDownloads:  d.OfflineDownloads,
+		cloudShares:       d.CloudShares,
 		playback:          d.Playback,
 		strm:              d.Strm,
 		strmDelete:        d.StrmDelete,
@@ -503,6 +507,12 @@ func NewRouter(d Deps) http.Handler {
 					r.Post("/tasks/refresh", h.refreshOfflineDownloadTasks)
 					r.Post("/tasks/batch-delete", h.batchDeleteOfflineDownloadTasks)
 					r.Delete("/tasks/{taskID}", h.deleteOfflineDownloadTask)
+				})
+				r.Route("/shares", func(r chi.Router) {
+					r.Get("/capabilities", h.cloudShareCapabilities)
+					r.Get("/", h.listCloudShares)
+					r.Post("/", h.createCloudShare)
+					r.Put("/", h.updateCloudShares)
 				})
 			})
 		})

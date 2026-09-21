@@ -137,6 +137,7 @@ func wireHTTPServer(cfg config.Config, logs *logx.Manager, st *storeBundle, core
 		Favorites:         svc.favorites,
 		Uploads:           svc.uploads,
 		OfflineDownloads:  svc.offlineDownloads,
+		CloudShares:       svc.cloudShares,
 		Playback:          svc.playback,
 		Strm:              svc.strm,
 		StrmDelete:        svc.strmDelete,
