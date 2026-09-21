@@ -4,7 +4,10 @@ export interface CloudShareCapabilities {
   supported: boolean;
   supports_free: boolean;
   supports_paid: boolean;
+  supports_manage: boolean;
+  supports_password: boolean;
   supports_traffic: boolean;
+  supports_cancel: boolean;
   max_items: number;
   expire_days: number[];
 }
@@ -57,4 +60,9 @@ export interface UpdateCloudSharePayload {
   traffic_switch: number;
   traffic_limit_switch: number;
   traffic_limit: number;
+}
+
+export interface CancelCloudSharesPayload {
+  account_id: number;
+  share_ids: string[];
 }

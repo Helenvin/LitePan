@@ -9,12 +9,15 @@ const (
 
 // ShareCapabilities 描述驱动可用的网盘分享能力。
 type ShareCapabilities struct {
-	Supported       bool  `json:"supported"`
-	SupportsFree    bool  `json:"supports_free"`
-	SupportsPaid    bool  `json:"supports_paid"`
-	SupportsTraffic bool  `json:"supports_traffic"`
-	MaxItems        int   `json:"max_items"`
-	ExpireDays      []int `json:"expire_days"`
+	Supported        bool  `json:"supported"`
+	SupportsFree     bool  `json:"supports_free"`
+	SupportsPaid     bool  `json:"supports_paid"`
+	SupportsManage   bool  `json:"supports_manage"`
+	SupportsPassword bool  `json:"supports_password"`
+	SupportsTraffic  bool  `json:"supports_traffic"`
+	SupportsCancel   bool  `json:"supports_cancel"`
+	MaxItems         int   `json:"max_items"`
+	ExpireDays       []int `json:"expire_days"`
 }
 
 type CreateShareRequest struct {
@@ -85,4 +88,8 @@ type ShareLister interface {
 
 type ShareUpdater interface {
 	UpdateShares(ctx context.Context, req UpdateShareRequest) error
+}
+
+type ShareCanceller interface {
+	CancelShares(ctx context.Context, shareIDs []string) error
 }

@@ -32,6 +32,11 @@ type updateCloudShareReq struct {
 	TrafficLimit       int64    `json:"traffic_limit"`
 }
 
+type cancelCloudSharesReq struct {
+	AccountID int64    `json:"account_id"`
+	ShareIDs  []string `json:"share_ids"`
+}
+
 func (h *Handler) cloudShareCapabilities(w http.ResponseWriter, r *http.Request) {
 	accountID, err := parseQueryInt64(r, "account_id")
 	if err != nil {
@@ -97,4 +102,17 @@ func (h *Handler) updateCloudShares(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, Resp{Success: true, Message: "分享设置已更新"})
+}
+
+func (h *Handler) cancelCloudShares(w http.ResponseWriter, r *http.Request) {
+	var req cancelCloudSharesReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := h.cloudShares.Cancel(r.Context(), req.AccountID, req.ShareIDs); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, Resp{Success: true, Message: "分享已取消"})
 }

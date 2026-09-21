@@ -55,6 +55,9 @@ func (s *Service) Create(ctx context.Context, accountID int64, req driver.Create
 		if req.Kind == driver.ShareKindFree && !capabilities.SupportsFree {
 			return domain.Errorf(domain.CodeNotImplement, "当前网盘不支持免费分享")
 		}
+		if req.Password != "" && !capabilities.SupportsPassword {
+			return domain.Errorf(domain.CodeNotImplement, "当前网盘不支持分享提取码")
+		}
 		if capabilities.MaxItems > 0 && len(req.FileIDs) > capabilities.MaxItems {
 			return domain.Errorf(domain.CodeValidation, "一次最多分享 %d 个项目", capabilities.MaxItems)
 		}
@@ -78,6 +81,10 @@ func (s *Service) List(ctx context.Context, accountID int64, req driver.ListShar
 	}
 	var result *driver.SharePage
 	err := s.exec.Run(ctx, accountID, func(drv driver.Driver) error {
+		provider, err := driverexec.Require[driver.ShareCapabilityProvider](drv)
+		if err != nil || !provider.ShareCapabilities().SupportsManage {
+			return domain.Errorf(domain.CodeNotImplement, "当前网盘不支持分享管理")
+		}
 		lister, err := driverexec.Require[driver.ShareLister](drv)
 		if err != nil {
 			return domain.Errorf(domain.CodeNotImplement, "当前网盘不支持分享管理")
@@ -98,11 +105,36 @@ func (s *Service) Update(ctx context.Context, accountID int64, req driver.Update
 		return domain.Errorf(domain.CodeValidation, "请选择要修改的分享")
 	}
 	return s.exec.Run(ctx, accountID, func(drv driver.Driver) error {
+		provider, err := driverexec.Require[driver.ShareCapabilityProvider](drv)
+		if err != nil || !provider.ShareCapabilities().SupportsTraffic {
+			return domain.Errorf(domain.CodeNotImplement, "当前网盘不支持修改分享流量设置")
+		}
 		updater, err := driverexec.Require[driver.ShareUpdater](drv)
 		if err != nil {
 			return domain.Errorf(domain.CodeNotImplement, "当前网盘不支持修改分享")
 		}
 		return updater.UpdateShares(ctx, req)
+	})
+}
+
+func (s *Service) Cancel(ctx context.Context, accountID int64, shareIDs []string) error {
+	if accountID <= 0 {
+		return domain.Errorf(domain.CodeValidation, "非法 account_id")
+	}
+	shareIDs = cleanStrings(shareIDs)
+	if len(shareIDs) == 0 {
+		return domain.Errorf(domain.CodeValidation, "请选择要取消的分享")
+	}
+	return s.exec.Run(ctx, accountID, func(drv driver.Driver) error {
+		provider, err := driverexec.Require[driver.ShareCapabilityProvider](drv)
+		if err != nil || !provider.ShareCapabilities().SupportsCancel {
+			return domain.Errorf(domain.CodeNotImplement, "当前网盘不支持取消分享")
+		}
+		canceller, err := driverexec.Require[driver.ShareCanceller](drv)
+		if err != nil {
+			return domain.Errorf(domain.CodeNotImplement, "当前网盘不支持取消分享")
+		}
+		return canceller.CancelShares(ctx, shareIDs)
 	})
 }
 

@@ -9,7 +9,9 @@ import SvgIcon from "@/components/icons/SvgIcon.vue";
 import { cloudShareApi } from "@/api/cloudShare";
 import { getApiErrorMessage } from "@/api/client";
 import { copyTextToClipboard, toast } from "@/composables/useToast";
+import { confirm } from "@/composables/useConfirm";
 import { formatSize } from "@/utils/format";
+import { shareCopyText } from "@/utils/cloudShare";
 import type { CloudShareCapabilities, CloudShareItem, CloudShareKind } from "@/types/cloud-share";
 
 const props = defineProps<{
@@ -31,6 +33,7 @@ const overTraffic = ref(false);
 const trafficLimitEnabled = ref(false);
 const trafficLimitGB = ref("1");
 const saving = ref(false);
+const cancellingId = ref("");
 
 const hasMore = computed(() => cursor.value !== "" && cursor.value !== "-1");
 
@@ -64,8 +67,7 @@ async function load(reset: boolean) {
 }
 
 async function copy(item: CloudShareItem) {
-  const suffix = item.password ? ` 提取码：${item.password}` : "";
-  await copyTextToClipboard(`${item.url}${suffix}`, { successMessage: "分享信息已复制", errorMessage: "复制失败" });
+  await copyTextToClipboard(shareCopyText(item.url, item.password), { successMessage: "分享信息已复制", errorMessage: "复制失败" });
 }
 
 function startEdit(item: CloudShareItem) {
@@ -105,6 +107,28 @@ async function saveTraffic() {
     saving.value = false;
   }
 }
+
+async function cancelShare(item: CloudShareItem) {
+  if (!props.accountId || cancellingId.value) return;
+  const accepted = await confirm({
+    title: "取消分享？",
+    message: `取消后，「${item.name}」的分享链接将立即失效，访问者无法再获取文件。`,
+    confirmText: "确认取消",
+    cancelText: "保留分享",
+    danger: true,
+  }).catch(() => false);
+  if (!accepted) return;
+  cancellingId.value = item.id;
+  try {
+    await cloudShareApi.cancel({ account_id: props.accountId, share_ids: [item.id] });
+    toast.success("分享已取消");
+    await load(true);
+  } catch (error) {
+    toast.error(getApiErrorMessage(error, "取消分享失败"));
+  } finally {
+    cancellingId.value = "";
+  }
+}
 </script>
 
 <template>
@@ -127,7 +151,6 @@ async function saveTraffic() {
         <div v-else class="share-list">
           <div class="share-row share-row--head"><span>文件</span><span>状态 · 有效期</span><span>使用情况</span></div>
           <div v-for="item in items" :key="item.id" class="share-row">
-            <!-- 操作钉在「文件」这一列的右端：列宽固定所以位置不动，又不用横跨整行 -->
             <span class="share-name-cell">
               <span class="share-name">
                 <strong :title="item.name">{{ item.name }}</strong>
@@ -138,6 +161,7 @@ async function saveTraffic() {
               <span class="share-actions">
                 <AppIconButton icon="hand-copy" label="复制分享" @click="copy(item)" />
                 <AppIconButton v-if="capability?.supports_traffic" icon="hand-edit" label="编辑分享" @click="startEdit(item)" />
+                <AppIconButton v-if="capability?.supports_cancel" icon="hand-link-off" label="取消分享" :disabled="cancellingId === item.id" @click="cancelShare(item)" />
               </span>
             </span>
             <span class="share-status">
@@ -152,7 +176,8 @@ async function saveTraffic() {
       </div>
 
       <div v-if="hasMore && !loading" class="share-more"><AppButton :disabled="loadingMore" @click="load(false)">{{ loadingMore ? "加载中…" : "加载更多" }}</AppButton></div>
-      <p class="share-hint">123 Open 未提供取消分享、修改名称 / 有效期 / 提取码的接口，目前只能改分享流量包。</p>
+      <p v-if="capability?.supports_traffic && !capability?.supports_cancel" class="share-hint">当前网盘只支持修改分享流量设置，不支持取消分享或修改名称、有效期与提取码。</p>
+      <p v-else-if="capability?.supports_cancel && !capability?.supports_traffic" class="share-hint">当前网盘支持复制和取消分享，暂不支持修改已创建的分享。</p>
     </div>
 
     <AppModal :open="Boolean(editing)" size="sm" title="分享链接设置" head-plain nested @close="editing = null">
@@ -181,7 +206,6 @@ async function saveTraffic() {
 
 <style scoped>
 .share-manage { min-height: 380px; display: flex; flex-direction: column; gap: 14px; }
-/* 标题栏与「分享链接设置」同款：极简头，标题 + 账号名 */
 .share-heading { display: flex; align-items: center; min-width: 0; gap: 10px; }
 .share-heading h3 { margin: 0; color: var(--text); font-size: 19px; font-weight: 700; }
 .share-heading span { color: var(--text-muted); font-size: 13px; }
@@ -192,14 +216,12 @@ async function saveTraffic() {
 .share-state { min-height: 250px; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--text-muted); }
 .share-state--empty { flex-direction: column; }
 .share-list { overflow: hidden; }
-/* 三列固定：文件名列自适应，状态与使用情况定宽 */
 .share-row { display: grid; grid-template-columns: minmax(0, 1fr) 172px 250px; align-items: center; gap: 16px; min-height: 64px; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); }
 .share-row:not(.share-row--head):hover { background: var(--surface-sunken); }
 .share-row:last-child { border-bottom: 0; }
 .share-row--head { min-height: 38px; color: var(--text-muted); background: var(--surface-sunken); font-size: 12px; }
 .share-name-cell { min-width: 0; display: flex; align-items: center; gap: 10px; }
 .share-name, .share-status, .share-stats { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-/* 名字占满整列，操作靠 margin-left:auto 钉在列右端 —— 列宽固定，位置就不会跟着名字长短跑 */
 .share-name { flex: 1 1 auto; }
 .share-stats { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .share-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

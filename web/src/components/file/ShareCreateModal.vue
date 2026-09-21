@@ -8,6 +8,7 @@ import SvgIcon from "@/components/icons/SvgIcon.vue";
 import { cloudShareApi } from "@/api/cloudShare";
 import { getApiErrorMessage } from "@/api/client";
 import { copyTextToClipboard, toast } from "@/composables/useToast";
+import { shareCopyText } from "@/utils/cloudShare";
 import type { FileItem } from "@/api/types";
 import type { CloudShareCapabilities, CloudShareItem, CloudShareKind } from "@/types/cloud-share";
 
@@ -36,6 +37,7 @@ const submitting = ref(false);
 const created = ref<CloudShareItem | null>(null);
 
 const canPaid = computed(() => Boolean(props.capability?.supports_paid));
+const canPassword = computed(() => Boolean(props.capability?.supports_password));
 const overLimit = computed(() => Boolean(props.capability?.max_items && props.files.length > props.capability.max_items));
 const customPasswordInvalid = computed(() => passwordMode.value === "custom" && !/^[A-Za-z0-9]{4}$/.test(password.value));
 const submitDisabled = computed(() => {
@@ -52,8 +54,8 @@ watch(() => props.open, (open) => {
   kind.value = "free";
   name.value = props.files.length === 1 ? (props.files[0]?.name || "") : `${props.files[0]?.name || "批量文件"}等 ${props.files.length} 项`;
   expireDays.value = props.capability?.expire_days?.includes(7) ? 7 : (props.capability?.expire_days?.[0] ?? 0);
-  passwordMode.value = "random";
-  password.value = randomPassword();
+  passwordMode.value = canPassword.value ? "random" : "none";
+  password.value = canPassword.value ? randomPassword() : "";
   payAmount.value = "10";
   rewardEnabled.value = true;
   resourceDesc.value = "";
@@ -115,8 +117,7 @@ async function submit() {
 
 async function copyResult() {
   if (!created.value) return;
-  const suffix = created.value.password ? ` 提取码：${created.value.password}` : "";
-  await copyTextToClipboard(`${created.value.url}${suffix}`, { successMessage: "分享信息已复制", errorMessage: "复制失败" });
+  await copyTextToClipboard(shareCopyText(created.value.url, created.value.password), { successMessage: "分享信息已复制", errorMessage: "复制失败" });
 }
 </script>
 
@@ -149,8 +150,8 @@ async function copyResult() {
           <span>分享形式</span>
           <div class="share-segments">
             <button type="button" :class="{ active: passwordMode === 'none' }" @click="passwordMode = 'none'">无提取码</button>
-            <button type="button" :class="{ active: passwordMode === 'random' }" @click="passwordMode = 'random'">随机生成</button>
-            <button type="button" :class="{ active: passwordMode === 'custom' }" @click="passwordMode = 'custom'">自定义</button>
+            <button v-if="canPassword" type="button" :class="{ active: passwordMode === 'random' }" @click="passwordMode = 'random'">随机生成</button>
+            <button v-if="canPassword" type="button" :class="{ active: passwordMode === 'custom' }" @click="passwordMode = 'custom'">自定义</button>
             <button v-if="canPaid" type="button" @click="kind = 'paid'">付费提取</button>
           </div>
           <div v-if="passwordMode === 'custom'" class="share-inline-field" :class="{ 'share-inline-field--error': customPasswordInvalid && password.length > 0 }">
@@ -170,8 +171,8 @@ async function copyResult() {
           <span>分享形式</span>
           <div class="share-segments">
             <button type="button" @click="kind = 'free'; passwordMode = 'none'">无提取码</button>
-            <button type="button" @click="kind = 'free'; passwordMode = 'random'">随机提取码</button>
-            <button type="button" @click="kind = 'free'; passwordMode = 'custom'">自定义提取码</button>
+            <button v-if="canPassword" type="button" @click="kind = 'free'; passwordMode = 'random'">随机提取码</button>
+            <button v-if="canPassword" type="button" @click="kind = 'free'; passwordMode = 'custom'">自定义提取码</button>
             <button type="button" class="active">付费提取</button>
           </div>
         </div>
@@ -198,9 +199,8 @@ async function copyResult() {
       <AppButton variant="primary" @click="copyResult"><SvgIcon name="copy" :size="16" />复制分享信息</AppButton>
     </div>
 
-    <template #footer>
-      <AppButton v-if="created" @click="emit('close')">完成</AppButton>
-      <AppButton v-else variant="primary" :disabled="submitDisabled" @click="submit">{{ submitting ? "正在创建…" : kind === "paid" ? "提交审核" : "创建链接" }}</AppButton>
+    <template v-if="!created" #footer>
+      <AppButton variant="primary" :disabled="submitDisabled" @click="submit">{{ submitting ? "正在创建…" : kind === "paid" ? "提交审核" : "创建链接" }}</AppButton>
     </template>
   </AppModal>
 </template>
@@ -214,7 +214,7 @@ async function copyResult() {
 .share-warning { margin: -4px 0 0; padding: 9px 11px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warning) 12%, var(--surface)); color: var(--warning); font-size: 12px; }
 .share-field { display: flex; flex-direction: column; gap: 8px; color: var(--text-muted); font-size: 13px; font-weight: 400; }
 .share-field small { color: var(--text-muted); font-size: 11px; font-weight: 400; }
-.share-segments { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 5px; border-radius: var(--radius-control); background: var(--surface-sunken); }
+.share-segments { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; padding: 5px; border-radius: var(--radius-control); background: var(--surface-sunken); }
 .share-segments button { min-height: 36px; padding: 0 7px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-regular); font: inherit; font-size: 13px; cursor: pointer; }
 .share-segments button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-card); font-weight: 600; }
 .share-inline-field { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-control); background: var(--surface-sunken); color: var(--text-muted); font: inherit; font-size: 13px; }
@@ -237,7 +237,7 @@ async function copyResult() {
 .share-result span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .share-result em { color: var(--brand); font-style: normal; white-space: nowrap; }
 @media (max-width: 640px) {
-  .share-segments { grid-template-columns: repeat(2, 1fr); }
+  .share-segments { grid-auto-flow: row; grid-template-columns: repeat(2, 1fr); }
   .share-heading span, .share-heading svg { display: none; }
   .share-inline-field { grid-template-columns: 1fr; }
   .traffic-options { align-items: flex-start; flex-direction: column; gap: 10px; }

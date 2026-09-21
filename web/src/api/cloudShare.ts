@@ -6,6 +6,7 @@ import type {
   CloudSharePage,
   CreateCloudSharePayload,
   UpdateCloudSharePayload,
+  CancelCloudSharesPayload,
 } from "@/types/cloud-share";
 
 export const cloudShareApi = {
@@ -20,5 +21,8 @@ export const cloudShareApi = {
   },
   update(payload: UpdateCloudSharePayload) {
     return http.put<void>("/files/shares/", payload);
+  },
+  cancel(payload: CancelCloudSharesPayload) {
+    return http.post<void>("/files/shares/cancel", payload);
   },
 };

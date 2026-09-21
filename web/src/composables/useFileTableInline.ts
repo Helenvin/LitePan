@@ -34,6 +34,7 @@ export function useFileTableInline(options: {
   coverExtractEnabled: Ref<boolean>;
   coverExtractFile: (file: FileItem) => void;
   shareSupported: Ref<boolean>;
+  shareManageSupported: Ref<boolean>;
   createShare: (files: FileItem[]) => void;
   manageShares: () => void;
 }) {
@@ -154,9 +155,9 @@ export function useFileTableInline(options: {
       items.push({
         action: "share-create",
         label: useBatchActions ? `分享已选 ${options.selectedIds.value.length} 项` : "分享",
-        accessoryAction: "share-manage",
-        accessoryIcon: "hand-list",
-        accessoryTitle: "分享管理",
+        accessoryAction: options.shareManageSupported.value ? "share-manage" : undefined,
+        accessoryIcon: options.shareManageSupported.value ? "hand-list" : undefined,
+        accessoryTitle: options.shareManageSupported.value ? "分享管理" : undefined,
       });
     }
     items.push(

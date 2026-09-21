@@ -14,8 +14,9 @@ type shareTestProvider struct{ drv driver.Driver }
 func (p shareTestProvider) Get(context.Context, int64) (driver.Driver, error) { return p.drv, nil }
 
 type shareTestDriver struct {
-	created driver.CreateShareRequest
-	updated driver.UpdateShareRequest
+	created   driver.CreateShareRequest
+	updated   driver.UpdateShareRequest
+	cancelled []string
 }
 
 func (*shareTestDriver) Config() driver.Config      { return driver.Config{Name: "share-test"} }
@@ -27,7 +28,10 @@ func (*shareTestDriver) ListFiles(context.Context, string) ([]domain.FileItem, e
 	return nil, nil
 }
 func (*shareTestDriver) ShareCapabilities() driver.ShareCapabilities {
-	return driver.ShareCapabilities{SupportsFree: true, SupportsPaid: true, SupportsTraffic: true, MaxItems: 2, ExpireDays: []int{1, 7, 30, 0}}
+	return driver.ShareCapabilities{
+		SupportsFree: true, SupportsPaid: true, SupportsManage: true, SupportsPassword: true,
+		SupportsTraffic: true, SupportsCancel: true, MaxItems: 2, ExpireDays: []int{1, 7, 30, 0},
+	}
 }
 func (d *shareTestDriver) CreateShare(_ context.Context, req driver.CreateShareRequest) (*driver.ShareItem, error) {
 	d.created = req
@@ -38,6 +42,10 @@ func (*shareTestDriver) ListShares(_ context.Context, req driver.ListSharesReque
 }
 func (d *shareTestDriver) UpdateShares(_ context.Context, req driver.UpdateShareRequest) error {
 	d.updated = req
+	return nil
+}
+func (d *shareTestDriver) CancelShares(_ context.Context, shareIDs []string) error {
+	d.cancelled = append([]string(nil), shareIDs...)
 	return nil
 }
 
@@ -87,5 +95,11 @@ func TestListAndUpdate(t *testing.T) {
 	}
 	if len(drv.updated.ShareIDs) != 1 || drv.updated.TrafficSwitch != 2 {
 		t.Fatalf("update request not normalized: %+v", drv.updated)
+	}
+	if err := svc.Cancel(context.Background(), 1, []string{"9", " 9 ", "10"}); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if len(drv.cancelled) != 2 || drv.cancelled[1] != "10" {
+		t.Fatalf("cancel ids not normalized: %#v", drv.cancelled)
 	}
 }

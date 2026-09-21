@@ -513,6 +513,7 @@ func NewRouter(d Deps) http.Handler {
 					r.Get("/", h.listCloudShares)
 					r.Post("/", h.createCloudShare)
 					r.Put("/", h.updateCloudShares)
+					r.Post("/cancel", h.cancelCloudShares)
 				})
 			})
 		})

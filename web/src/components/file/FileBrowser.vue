@@ -253,7 +253,7 @@ function openCreateShare(nextFiles: FileItem[]) {
 }
 
 function openShareManagement() {
-  if (!shareCapability.value?.supported) return;
+  if (!shareCapability.value?.supports_manage) return;
   shareManageOpen.value = true;
 }
 const transferTaskCount = computed(() => {
@@ -1136,6 +1136,7 @@ homeFooterStatus.onOpenTaskPanel(openTaskPanel);
             :cover-extract-enabled="coverExtractEnabled"
             :cover-extract-file="sendToCoverExtract"
             :share-supported="Boolean(shareCapability?.supported)"
+            :share-manage-supported="Boolean(shareCapability?.supports_manage)"
             :create-share="openCreateShare"
             :manage-shares="openShareManagement"
             :drag-active="dragMove.active"

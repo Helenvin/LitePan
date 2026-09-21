@@ -152,4 +152,8 @@ var (
 	_ driver.ConnectionErrorExplainer = (*Driver)(nil)
 	_ driver.RequestIntervalConsumer  = (*Driver)(nil)
 	_ driver.QRLoginProvider          = (*Driver)(nil)
+	_ driver.ShareCapabilityProvider  = (*Driver)(nil)
+	_ driver.ShareCreator             = (*Driver)(nil)
+	_ driver.ShareLister              = (*Driver)(nil)
+	_ driver.ShareCanceller           = (*Driver)(nil)
 )

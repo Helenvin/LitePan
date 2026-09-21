@@ -48,7 +48,8 @@ type shareListItem struct {
 
 func (d *Driver) ShareCapabilities() driver.ShareCapabilities {
 	return driver.ShareCapabilities{
-		Supported: true, SupportsFree: true, SupportsPaid: true, SupportsTraffic: true,
+		Supported: true, SupportsFree: true, SupportsPaid: true, SupportsManage: true,
+		SupportsPassword: true, SupportsTraffic: true, SupportsCancel: false,
 		MaxItems: 100, ExpireDays: []int{1, 7, 30, 0},
 	}
 }
