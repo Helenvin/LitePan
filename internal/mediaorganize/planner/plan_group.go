@@ -403,6 +403,12 @@ func (p *Planner) planGroupWithMatch(
 
 // recordNeedsMatch 记录需要用户手动匹配的组（供计划预览展示）。
 func (p *Planner) recordNeedsMatch(key groupKey, items []batchEntry, reason string, extra map[string]any) {
+	sourceIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		if sourceID := strings.TrimSpace(item.item.ID); sourceID != "" {
+			sourceIDs = append(sourceIDs, sourceID)
+		}
+	}
 	entry := map[string]any{
 		"group_uid":  groupUIDOf(key),
 		"media_kind": key.mediaKind,
@@ -411,6 +417,7 @@ func (p *Planner) recordNeedsMatch(key groupKey, items []batchEntry, reason stri
 		"title":      key.title,
 		"reason":     reason,
 		"count":      len(items),
+		"source_ids": sourceIDs,
 	}
 	if key.hasYear {
 		entry["year"] = key.year
