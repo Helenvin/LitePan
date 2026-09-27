@@ -19,7 +19,7 @@ type Driver struct {
 	driver.AuthRefreshControl
 	add          Addition
 	client       *http.Client
-	uploadClient *http.Client
+	uploadClient *http.Client // 分片上传使用独立的长连接客户端，普通 API 不受影响。
 
 	oauthBase string
 
@@ -79,7 +79,7 @@ func (d *Driver) Init(ctx context.Context) error {
 		d.client = httpx.NewClient(httpx.ClientOptions{Timeout: 30 * time.Second})
 	}
 	if d.uploadClient == nil {
-		d.uploadClient = httpx.NewStreamingClient(d.client, 60*time.Second)
+		d.uploadClient = httpx.NewUploadClient(d.client, 60*time.Second, config.UploadUseHTTP2)
 	}
 	d.mu.Lock()
 	token := d.token
