@@ -8,14 +8,13 @@ import SvgIcon from "@/components/icons/SvgIcon.vue";
 import { cloudShareApi } from "@/api/cloudShare";
 import { getApiErrorMessage } from "@/api/client";
 import { copyTextToClipboard, toast } from "@/composables/useToast";
-import { shareCopyText } from "@/utils/cloudShare";
+import { shareURLWithPassword, shareTrafficSwitch } from "@/utils/cloudShare";
 import type { FileItem } from "@/api/types";
 import type { CloudShareCapabilities, CloudShareItem, CloudShareKind } from "@/types/cloud-share";
 
 const props = defineProps<{
   open: boolean;
   accountId: number | null;
-  accountName: string;
   files: FileItem[];
   capability: CloudShareCapabilities | null;
 }>();
@@ -27,12 +26,9 @@ const expireDays = ref(7);
 const passwordMode = ref<"none" | "random" | "custom">("random");
 const password = ref("");
 const payAmount = ref("10");
-const rewardEnabled = ref(true);
 const resourceDesc = ref("");
 const guestTraffic = ref(false);
 const overTraffic = ref(false);
-const trafficLimitEnabled = ref(false);
-const trafficLimitGB = ref("1");
 const submitting = ref(false);
 const created = ref<CloudShareItem | null>(null);
 
@@ -57,12 +53,9 @@ watch(() => props.open, (open) => {
   passwordMode.value = canPassword.value ? "random" : "none";
   password.value = canPassword.value ? randomPassword() : "";
   payAmount.value = "10";
-  rewardEnabled.value = true;
   resourceDesc.value = "";
   guestTraffic.value = false;
   overTraffic.value = false;
-  trafficLimitEnabled.value = false;
-  trafficLimitGB.value = "1";
   created.value = null;
 });
 
@@ -81,18 +74,10 @@ function updateCustomPassword(value: string | number | null) {
   password.value = String(value ?? "").replace(/[^A-Za-z0-9]/g, "").slice(0, 4);
 }
 
-function trafficSwitch() {
-  if (guestTraffic.value && overTraffic.value) return 4;
-  if (guestTraffic.value) return 2;
-  if (overTraffic.value) return 3;
-  return 1;
-}
-
 async function submit() {
   if (!props.accountId || submitDisabled.value) return;
   submitting.value = true;
   try {
-    const limit = trafficLimitEnabled.value ? Math.max(0, Number(trafficLimitGB.value) || 0) * 1024 ** 3 : 0;
     created.value = await cloudShareApi.create({
       account_id: props.accountId,
       kind: kind.value,
@@ -101,11 +86,11 @@ async function submit() {
       expire_days: kind.value === "free" ? expireDays.value : 0,
       password: kind.value === "free" ? password.value.trim() : undefined,
       pay_amount: kind.value === "paid" ? Number(payAmount.value) : undefined,
-      reward_enabled: kind.value === "paid" ? rewardEnabled.value : undefined,
+      reward_enabled: kind.value === "paid" ? true : undefined,
       resource_desc: kind.value === "paid" ? resourceDesc.value.trim() : undefined,
-      traffic_switch: trafficSwitch(),
-      traffic_limit_switch: trafficLimitEnabled.value ? 2 : 1,
-      traffic_limit: Math.round(limit),
+      traffic_switch: shareTrafficSwitch(guestTraffic.value, overTraffic.value),
+      traffic_limit_switch: 1,
+      traffic_limit: 0,
     });
     toast.success("分享创建成功");
   } catch (error) {
@@ -117,7 +102,7 @@ async function submit() {
 
 async function copyResult() {
   if (!created.value) return;
-  await copyTextToClipboard(shareCopyText(created.value.url, created.value.password), { successMessage: "分享信息已复制", errorMessage: "复制失败" });
+  await copyTextToClipboard(shareURLWithPassword(created.value.url, created.value.password), { successMessage: "分享信息已复制", errorMessage: "复制失败" });
 }
 </script>
 
@@ -213,7 +198,6 @@ async function copyResult() {
 .share-form { display: flex; flex-direction: column; gap: 16px; padding: 0 8px 4px; }
 .share-warning { margin: -4px 0 0; padding: 9px 11px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warning) 12%, var(--surface)); color: var(--warning); font-size: 12px; }
 .share-field { display: flex; flex-direction: column; gap: 8px; color: var(--text-muted); font-size: 13px; font-weight: 400; }
-.share-field small { color: var(--text-muted); font-size: 11px; font-weight: 400; }
 .share-segments { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; padding: 5px; border-radius: var(--radius-control); background: var(--surface-sunken); }
 .share-segments button { min-height: 36px; padding: 0 7px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-regular); font: inherit; font-size: 13px; cursor: pointer; }
 .share-segments button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-card); font-weight: 600; }

@@ -159,7 +159,7 @@ func (d *Driver) UploadLocalFile(ctx context.Context, req driver.LocalUploadRequ
 		persistPan123ResumeState(req.OnResumeState, resume)
 	}
 
-	if err := d.uploadFileSlices(ctx, localPath, targetName, fileSize, preuploadID, sliceSize, servers, req.OnProgress, resume, req.OnResumeState); err != nil {
+	if err := d.uploadFileSlices(ctx, localPath, fileSize, preuploadID, sliceSize, servers, req.OnProgress, resume, req.OnResumeState); err != nil {
 		return nil, err
 	}
 
@@ -257,7 +257,7 @@ func normalizeUploadServers(servers []any) []string {
 
 func (d *Driver) uploadFileSlices(
 	ctx context.Context,
-	localPath, fileName string,
+	localPath string,
 	fileSize int64,
 	preuploadID string,
 	sliceSize int64,
@@ -283,7 +283,7 @@ func (d *Driver) uploadFileSlices(
 	}
 	uploaded := uploadutil.UploadedBytesByParts(fileSize, sliceSize, completed)
 	progressMsg := "正在上传到123云盘Open"
-	progress := newParallelSliceProgress(uploaded, fileSize, onProgress, progressMsg)
+	progress := uploadutil.NewParallelProgress(uploaded, fileSize, onProgress, progressMsg)
 	if len(completed) > 0 {
 		uploadutil.NotifyProgress(onProgress, uploaded, fileSize, "正在继续上传到123云盘Open")
 	}
@@ -341,7 +341,7 @@ func (d *Driver) uploadFileSlices(
 					return
 				}
 				if err := d.uploadSingleSliceReader(workerCtx, preuploadID, sliceNo, hex.EncodeToString(hasher.Sum(nil)), reader, chunkLen, servers, func(sent int64) {
-					progress.update(sliceNo, sent, chunkLen)
+					progress.Update(sliceNo, sent, chunkLen)
 				}); err != nil {
 					errOnce.Do(func() {
 						firstErr = err
@@ -358,7 +358,7 @@ func (d *Driver) uploadFileSlices(
 					persistPan123ResumeState(onState, resume)
 				}
 				completedMu.Unlock()
-				progress.complete(sliceNo, chunkLen)
+				progress.Complete(sliceNo, chunkLen)
 			}
 		}()
 	}
@@ -431,7 +431,7 @@ func (d *Driver) uploadSingleSliceReader(
 	return domain.Errorf(domain.CodeDriverError, "上传分片 %d 失败", sliceNo)
 }
 
-func buildSliceMultipartEnvelope(preuploadID string, sliceNo int, sliceMD5 string, chunkLen int64) (prefix, suffix []byte, contentType string, total int64) {
+func buildSliceMultipartEnvelope(preuploadID string, sliceNo int, sliceMD5 string) (prefix, suffix []byte, contentType string) {
 	boundary := fmt.Sprintf("----LitePan123Open%d", time.Now().UnixNano())
 	var pb bytes.Buffer
 	writeField := func(name, value string) {
@@ -443,9 +443,8 @@ func buildSliceMultipartEnvelope(preuploadID string, sliceNo int, sliceMD5 strin
 	fmt.Fprintf(&pb, "--%s\r\nContent-Disposition: form-data; name=\"slice\"; filename=\"slice-%d\"\r\nContent-Type: application/octet-stream\r\n\r\n", boundary, sliceNo)
 	prefix = append([]byte(nil), pb.Bytes()...)
 	suffix = []byte(fmt.Sprintf("\r\n--%s--\r\n", boundary))
-	total = int64(len(prefix)+len(suffix)) + chunkLen
 	contentType = fmt.Sprintf("multipart/form-data; boundary=%s", boundary)
-	return prefix, suffix, contentType, total
+	return prefix, suffix, contentType
 }
 
 type sliceByteCounter struct {
@@ -455,77 +454,6 @@ type sliceByteCounter struct {
 type sliceCountingReader struct {
 	r io.Reader
 	c *sliceByteCounter
-}
-
-// parallelSliceProgress 将多个并发分片的已发送字节汇总成单调的文件进度。
-// 分片重试时不回退已上报进度，避免前端进度条和速度来回跳动。
-type parallelSliceProgress struct {
-	mu         sync.Mutex
-	completed  int64
-	active     map[int]int64
-	reported   int64
-	total      int64
-	onProgress driver.UploadProgress
-	message    string
-}
-
-func newParallelSliceProgress(completed, total int64, onProgress driver.UploadProgress, message string) *parallelSliceProgress {
-	return &parallelSliceProgress{
-		completed:  completed,
-		active:     make(map[int]int64, uploadSliceConcurrency),
-		reported:   completed,
-		total:      total,
-		onProgress: onProgress,
-		message:    message,
-	}
-}
-
-func (p *parallelSliceProgress) update(sliceNo int, sent, chunkLen int64) {
-	if p == nil || p.onProgress == nil {
-		return
-	}
-	if sent < 0 {
-		sent = 0
-	}
-	if sent > chunkLen {
-		sent = chunkLen
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if sent <= p.active[sliceNo] {
-		return
-	}
-	p.active[sliceNo] = sent
-	p.notifyLocked()
-}
-
-func (p *parallelSliceProgress) complete(sliceNo int, chunkLen int64) {
-	if p == nil {
-		return
-	}
-	p.mu.Lock()
-	delete(p.active, sliceNo)
-	p.completed += chunkLen
-	p.notifyLocked()
-	p.mu.Unlock()
-}
-
-func (p *parallelSliceProgress) notifyLocked() {
-	uploaded := p.completed
-	for _, sent := range p.active {
-		uploaded += sent
-	}
-	if uploaded < p.reported {
-		uploaded = p.reported
-	}
-	if uploaded > p.total {
-		uploaded = p.total
-	}
-	if uploaded == p.reported {
-		return
-	}
-	p.reported = uploaded
-	uploadutil.NotifyProgress(p.onProgress, uploaded, p.total, p.message)
 }
 
 func (r *sliceCountingReader) Read(p []byte) (int, error) {
@@ -588,7 +516,7 @@ func (d *Driver) postUploadSliceReader(
 	chunkLen int64,
 	onProgress func(sent int64),
 ) error {
-	prefix, suffix, contentType, _ := buildSliceMultipartEnvelope(preuploadID, sliceNo, sliceMD5, chunkLen)
+	prefix, suffix, contentType := buildSliceMultipartEnvelope(preuploadID, sliceNo, sliceMD5)
 
 	var counter sliceByteCounter
 	stopProgress := startSliceProgressReporter(ctx, &counter, chunkLen, onProgress)

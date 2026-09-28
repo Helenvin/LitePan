@@ -39,7 +39,6 @@ const title = computed(() => {
   return "开启两步验证";
 });
 
-// 步骤条只在多步流程里出现；关闭和「重新生成恢复码」各自只有一步就没必要画
 const stepLabels = computed(() => {
   if (step.value === "manage" || action.value === "disable") return [];
   if (action.value === "recovery") return ["验证身份", "保存恢复码"];
@@ -71,12 +70,6 @@ function startManage() {
   step.value = "manage";
   resetForm();
   open.value = true;
-}
-
-function pickAction(next: Action) {
-  action.value = next;
-  step.value = "verify";
-  resetForm();
 }
 
 function close() {
@@ -163,7 +156,6 @@ async function copyText(text: string, message: string) {
   }
 }
 
-/** 恢复码改成下载 CSV：比复制更利于长期保存，也能直接进密码管理器/表格 */
 function downloadRecoveryCodes() {
   if (!recoveryCodes.value.length) return;
   const rows = [["序号", "恢复码"], ...recoveryCodes.value.map((code, index) => [String(index + 1), code])];
@@ -183,7 +175,6 @@ function downloadRecoveryCodes() {
 </script>
 
 <template>
-  <!-- 和上面的设置项共用同一套两列栅格：左列状态、右列动作，左右边缘都能对齐 -->
   <div class="two-factor" :class="{ 'two-factor--on': enabled }">
     <div class="two-factor__state">
       <span class="two-factor__icon"><SvgIcon name="shield" :size="17" /></span>
@@ -212,15 +203,15 @@ function downloadRecoveryCodes() {
         <span><b>已开启</b><small>登录时除密码外还需要验证器动态码</small></span>
       </div>
       <div class="factor-actions">
-        <button type="button" class="factor-action" @click="pickAction('rebind')">
+        <button type="button" class="factor-action" @click="start('rebind')">
           <span class="factor-action__tx"><b>重新绑定验证器</b><small>换手机或验证器丢失时使用</small></span>
           <span class="factor-action__go">›</span>
         </button>
-        <button type="button" class="factor-action" @click="pickAction('recovery')">
+        <button type="button" class="factor-action" @click="start('recovery')">
           <span class="factor-action__tx"><b>重新生成恢复码</b><small>旧的恢复码会立即失效</small></span>
           <span class="factor-action__go">›</span>
         </button>
-        <button type="button" class="factor-action factor-action--danger" @click="pickAction('disable')">
+        <button type="button" class="factor-action factor-action--danger" @click="start('disable')">
           <span class="factor-action__tx"><b>关闭两步验证</b><small>关闭后登录只需要密码</small></span>
           <span class="factor-action__go">›</span>
         </button>

@@ -13,6 +13,9 @@ export function shareURLWithPassword(rawURL: string, rawPassword?: string) {
   }
 }
 
-export function shareCopyText(url: string, password?: string) {
-  return shareURLWithPassword(url, password);
+export function shareTrafficSwitch(guest: boolean, freeUser: boolean) {
+  if (guest && freeUser) return 4;
+  if (guest) return 2;
+  if (freeUser) return 3;
+  return 1;
 }

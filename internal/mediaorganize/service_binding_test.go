@@ -2,6 +2,7 @@ package mediaorganize
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -331,13 +332,13 @@ func TestBindingReplacePlanGroupMergesRenameTVSeasonsIntoExistingWorkDir(t *test
 	if losingRename == nil || losingRename.Status != "skipped" {
 		t.Fatalf("第二个同作品目录改名应转为归并: %+v", losingRename)
 	}
-	if season2 == nil || season2.TargetParentID != "show2022" || !bindingContainsString(season2.DependsOn, "a1") {
+	if season2 == nil || season2.TargetParentID != "show2022" || !slices.Contains(season2.DependsOn, "a1") {
 		t.Fatalf("Season 02 应创建在已匹配的作品目录中: %+v", season2)
 	}
 	if episode == nil || !strings.HasPrefix(episode.TargetParentID, "ref:") {
 		t.Fatalf("第二季文件应放入 Season 02: %+v", episode)
 	}
-	if cleanup == nil || !bindingContainsString(cleanup.DependsOn, episode.ID) {
+	if cleanup == nil || !slices.Contains(cleanup.DependsOn, episode.ID) {
 		t.Fatalf("归并后应在文件迁移完成后清理旧目录: %+v", cleanup)
 	}
 }

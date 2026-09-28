@@ -110,7 +110,7 @@ func (s *Service) BeginTwoFactorSetup(ctx context.Context, req TwoFactorSetupReq
 		return nil, err
 	}
 	if s.twoFactorEnabled(ctx) {
-		if err := s.verifyTwoFactorCode(ctx, req.VerificationCode, true); err != nil {
+		if err := s.verifyTwoFactorCode(ctx, req.VerificationCode); err != nil {
 			return nil, domain.Errorf(domain.CodeValidation, "重新绑定前请输入当前动态码或恢复码")
 		}
 	}
@@ -183,7 +183,7 @@ func (s *Service) DisableTwoFactor(ctx context.Context, req TwoFactorVerifyReque
 	if !s.twoFactorEnabled(ctx) {
 		return nil
 	}
-	if err := s.verifyTwoFactorCode(ctx, req.Code, true); err != nil {
+	if err := s.verifyTwoFactorCode(ctx, req.Code); err != nil {
 		return err
 	}
 	s.twoFactorMu.Lock()
@@ -204,7 +204,7 @@ func (s *Service) RegenerateRecoveryCodes(ctx context.Context, req TwoFactorVeri
 	if !s.twoFactorEnabled(ctx) {
 		return nil, domain.Errorf(domain.CodeValidation, "尚未开启两步验证")
 	}
-	if err := s.verifyTwoFactorCode(ctx, req.Code, true); err != nil {
+	if err := s.verifyTwoFactorCode(ctx, req.Code); err != nil {
 		return nil, err
 	}
 	codes, hashes, err := s.generateRecoveryCodes()
@@ -222,14 +222,13 @@ func (s *Service) RegenerateRecoveryCodes(ctx context.Context, req TwoFactorVeri
 func (s *Service) verifyCurrentPassword(ctx context.Context, password string) error {
 	_, stored := s.adminCredentials(ctx)
 	if !security.VerifyAdminPassword(stored, password) {
-		// 这里是「密码填错了」，不是「登录态失效」：必须用 VALIDATION（400），
-		// 否则前端拿到 401 + ADMIN_AUTH_REQUIRED 会直接跳登录页，用户看不到任何提示。
+		// 使用 400，避免前端将输错密码当作登录失效。
 		return domain.Errorf(domain.CodeValidation, "当前管理员密码不正确")
 	}
 	return nil
 }
 
-func (s *Service) verifyTwoFactorCode(ctx context.Context, code string, consumeRecovery bool) error {
+func (s *Service) verifyTwoFactorCode(ctx context.Context, code string) error {
 	code = normalizeVerificationCode(code)
 	if code == "" {
 		return domain.Errorf(domain.CodeValidation, "请输入动态验证码或恢复码")
@@ -242,11 +241,10 @@ func (s *Service) verifyTwoFactorCode(ctx context.Context, code string, consumeR
 	if validateTOTP(string(secret), code, time.Now()) {
 		return nil
 	}
-	if consumeRecovery && s.consumeRecoveryCode(ctx, code) {
+	if s.consumeRecoveryCode(ctx, code) {
 		return nil
 	}
-	// 动态码/恢复码不对同样是「填错了」，用 VALIDATION（400）；
-	// 用 401 会被前端当成登录态失效而跳走。恢复码用过一次即从列表移除，所以重复使用也走这里。
+	// 验证失败不应触发前端退出登录。
 	return domain.Errorf(domain.CodeValidation, "动态验证码或恢复码不正确；恢复码用过一次即失效")
 }
 

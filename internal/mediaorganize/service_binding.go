@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"litepan/internal/domain"
@@ -315,7 +316,7 @@ func bindingMergeDuplicateRenameWorkDirs(plan *Plan) {
 			child.DependsOn = bindingReplaceDependency(child.DependsOn, action.ID, winner.ID)
 			if child.TargetParentID == losingDirID {
 				child.TargetParentID = winningDirID
-				if winner.ID != "" && !bindingContainsString(child.DependsOn, winner.ID) {
+				if winner.ID != "" && !slices.Contains(child.DependsOn, winner.ID) {
 					child.DependsOn = append(child.DependsOn, winner.ID)
 				}
 			}
@@ -345,20 +346,11 @@ func bindingReplaceDependency(values []string, oldID, newID string) []string {
 		if value == oldID {
 			value = newID
 		}
-		if value != "" && !bindingContainsString(result, value) {
+		if value != "" && !slices.Contains(result, value) {
 			result = append(result, value)
 		}
 	}
 	return result
-}
-
-func bindingContainsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 // bindingCollectPlanSourceIDs 收集局部重建实际涉及的源文件。

@@ -308,7 +308,7 @@ func (s *Service) completeTwoFactorLogin(ctx context.Context, r *http.Request, w
 	if !s.allowTwoFactorAttempt(attemptKey) {
 		return nil, domain.Errorf(domain.CodeRateLimited, "动态验证码错误次数过多，请 5 分钟后再试")
 	}
-	if err := s.verifyTwoFactorCode(ctx, code, true); err != nil {
+	if err := s.verifyTwoFactorCode(ctx, code); err != nil {
 		s.log.Warn("管理员两步验证失败", "username", login.Username, "ip", clientIP(r))
 		return nil, err
 	}

@@ -203,10 +203,10 @@ func TestTwoFactorRecoveryCodeCanOnlyBeUsedOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	code := recovery.RecoveryCodes[0]
-	if err := svc.verifyTwoFactorCode(ctx, code, true); err != nil {
+	if err := svc.verifyTwoFactorCode(ctx, code); err != nil {
 		t.Fatalf("first recovery code use: %v", err)
 	}
-	err = svc.verifyTwoFactorCode(ctx, code, true)
+	err = svc.verifyTwoFactorCode(ctx, code)
 	if err == nil {
 		t.Fatal("consumed recovery code was accepted again")
 	}

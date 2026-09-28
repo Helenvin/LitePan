@@ -450,7 +450,7 @@ func (d *Driver) uploadBaiduParts(
 	}
 	close(jobs)
 
-	progress := newBaiduParallelProgress(uploaded, meta.size, onProgress)
+	progress := uploadutil.NewParallelProgress(uploaded, meta.size, onProgress, "正在上传到百度网盘（3 路并发）")
 	workerCount := min(uploadPartConcurrency, len(pending))
 	var workers sync.WaitGroup
 	workers.Add(workerCount)
@@ -464,7 +464,7 @@ func (d *Driver) uploadBaiduParts(
 				chunkSize := partSize(meta, partSeq)
 				chunk := io.NewSectionReader(f, int64(partSeq)*meta.chunkSize, int64(chunkSize))
 				err := d.uploadBaiduPart(workerCtx, uploadHost, targetPath, uploadID, partSeq, chunk, int64(chunkSize), meta.blockList[partSeq], func(sent int64) {
-					progress.update(partSeq, sent, int64(chunkSize))
+					progress.Update(partSeq, sent, int64(chunkSize))
 				})
 				results <- partResult{seq: partSeq, size: int64(chunkSize), err: err}
 				if err != nil {
@@ -488,7 +488,7 @@ func (d *Driver) uploadBaiduParts(
 			}
 			continue
 		}
-		progress.complete(result.seq, result.size)
+		progress.Complete(result.seq, result.size)
 		resume.completedParts[result.seq] = struct{}{}
 		uploaded += result.size
 		if uploaded > meta.size {
@@ -508,73 +508,6 @@ func (d *Driver) uploadBaiduParts(
 		return err
 	}
 	return nil
-}
-
-type baiduParallelProgress struct {
-	mu         sync.Mutex
-	completed  int64
-	active     map[int]int64
-	reported   int64
-	total      int64
-	onProgress driver.UploadProgress
-}
-
-func newBaiduParallelProgress(completed, total int64, onProgress driver.UploadProgress) *baiduParallelProgress {
-	return &baiduParallelProgress{
-		completed:  completed,
-		active:     make(map[int]int64, uploadPartConcurrency),
-		reported:   completed,
-		total:      total,
-		onProgress: onProgress,
-	}
-}
-
-func (p *baiduParallelProgress) update(partSeq int, sent, partSize int64) {
-	if p == nil || p.onProgress == nil {
-		return
-	}
-	if sent < 0 {
-		sent = 0
-	}
-	if sent > partSize {
-		sent = partSize
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if sent <= p.active[partSeq] {
-		return
-	}
-	p.active[partSeq] = sent
-	p.notifyLocked()
-}
-
-func (p *baiduParallelProgress) complete(partSeq int, partSize int64) {
-	if p == nil {
-		return
-	}
-	p.mu.Lock()
-	delete(p.active, partSeq)
-	p.completed += partSize
-	p.notifyLocked()
-	p.mu.Unlock()
-}
-
-func (p *baiduParallelProgress) notifyLocked() {
-	uploaded := p.completed
-	for _, sent := range p.active {
-		uploaded += sent
-	}
-	if uploaded < p.reported {
-		uploaded = p.reported
-	}
-	if uploaded > p.total {
-		uploaded = p.total
-	}
-	if uploaded == p.reported {
-		return
-	}
-	p.reported = uploaded
-	uploadutil.NotifyProgress(p.onProgress, uploaded, p.total, "正在上传到百度网盘（3 路并发）")
 }
 
 func partSize(meta uploadMeta, partSeq int) int {

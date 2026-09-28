@@ -49,8 +49,6 @@ withDefaults(
     icon: string;
     subtitle: string;
     items: ProxyWorkspaceItem[];
-    itemToggleable?: boolean;
-    itemToggleDisabled?: boolean;
     selectedId: string;
     fields: ProxyField[];
     namePlaceholder?: string;
@@ -96,8 +94,6 @@ withDefaults(
     removeLabel: "删除配置",
     deletable: true,
     addable: true,
-    itemToggleable: false,
-    itemToggleDisabled: false,
   },
 );
 
@@ -110,7 +106,6 @@ const emit = defineEmits<{
   copy: [];
   save: [];
   cancel: [];
-  toggleItem: [id: string, checked: boolean];
 }>();
 
 const form = defineModel<Record<string, string>>({ required: true });
@@ -168,17 +163,7 @@ function cancelName() {
                 <b>{{ item.id === selectedId ? currentName : item.name }}</b>
                 <small>{{ itemSubtitle(item) }}</small>
               </span>
-              <input
-                v-if="itemToggleable"
-                class="ws-side__check"
-                type="checkbox"
-                :checked="item.running"
-                :disabled="itemToggleDisabled"
-                :aria-label="`${item.running ? '取消监控' : '监控'}${item.name}`"
-                @click.stop
-                @change="emit('toggleItem', item.id, ($event.target as HTMLInputElement).checked)"
-              />
-              <span v-else class="ws-side__st" :class="{ on: item.running }" />
+              <span class="ws-side__st" :class="{ on: item.running }" />
             </div>
             <div v-if="!items.length" class="ws-side__empty">还没有配置<br>点下方「添加配置」新建</div>
           </div>
@@ -405,18 +390,6 @@ function cancelName() {
   background: var(--success);
 }
 
-.ws-side__check {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  flex: 0 0 auto;
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-.ws-side__check:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
 .ws-side__empty {
   padding: 26px 10px;
   text-align: center;

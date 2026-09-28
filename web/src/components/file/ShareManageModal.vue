@@ -11,7 +11,7 @@ import { getApiErrorMessage } from "@/api/client";
 import { copyTextToClipboard, toast } from "@/composables/useToast";
 import { confirm } from "@/composables/useConfirm";
 import { formatSize } from "@/utils/format";
-import { shareCopyText } from "@/utils/cloudShare";
+import { shareURLWithPassword, shareTrafficSwitch } from "@/utils/cloudShare";
 import type { CloudShareCapabilities, CloudShareItem, CloudShareKind } from "@/types/cloud-share";
 
 const props = defineProps<{
@@ -30,8 +30,6 @@ const loadingMore = ref(false);
 const editing = ref<CloudShareItem | null>(null);
 const guestTraffic = ref(false);
 const overTraffic = ref(false);
-const trafficLimitEnabled = ref(false);
-const trafficLimitGB = ref("1");
 const saving = ref(false);
 const cancellingId = ref("");
 
@@ -67,36 +65,26 @@ async function load(reset: boolean) {
 }
 
 async function copy(item: CloudShareItem) {
-  await copyTextToClipboard(shareCopyText(item.url, item.password), { successMessage: "分享信息已复制", errorMessage: "复制失败" });
+  await copyTextToClipboard(shareURLWithPassword(item.url, item.password), { successMessage: "分享信息已复制", errorMessage: "复制失败" });
 }
 
 function startEdit(item: CloudShareItem) {
   editing.value = item;
   guestTraffic.value = item.traffic_switch === 2 || item.traffic_switch === 4;
   overTraffic.value = item.traffic_switch === 3 || item.traffic_switch === 4;
-  trafficLimitEnabled.value = item.traffic_limit_switch === 2;
-  trafficLimitGB.value = item.traffic_limit > 0 ? String(Math.max(.01, item.traffic_limit / 1024 ** 3)) : "1";
-}
-
-function trafficSwitch() {
-  if (guestTraffic.value && overTraffic.value) return 4;
-  if (guestTraffic.value) return 2;
-  if (overTraffic.value) return 3;
-  return 1;
 }
 
 async function saveTraffic() {
   if (!props.accountId || !editing.value || saving.value) return;
   saving.value = true;
   try {
-    const limit = trafficLimitEnabled.value ? Math.max(0, Number(trafficLimitGB.value) || 0) * 1024 ** 3 : 0;
     await cloudShareApi.update({
       account_id: props.accountId,
       kind: kind.value,
       share_ids: [editing.value.id],
-      traffic_switch: trafficSwitch(),
-      traffic_limit_switch: trafficLimitEnabled.value ? 2 : 1,
-      traffic_limit: Math.round(limit),
+      traffic_switch: shareTrafficSwitch(guestTraffic.value, overTraffic.value),
+      traffic_limit_switch: editing.value.traffic_limit_switch,
+      traffic_limit: editing.value.traffic_limit,
     });
     toast.success("分享流量设置已保存");
     editing.value = null;
@@ -206,9 +194,6 @@ async function cancelShare(item: CloudShareItem) {
 
 <style scoped>
 .share-manage { min-height: 380px; display: flex; flex-direction: column; gap: 14px; }
-.share-heading { display: flex; align-items: center; min-width: 0; gap: 10px; }
-.share-heading h3 { margin: 0; color: var(--text); font-size: 19px; font-weight: 700; }
-.share-heading span { color: var(--text-muted); font-size: 13px; }
 .share-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border-soft); }
 .share-tabs button { padding: 9px 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font-weight: 600; cursor: pointer; }
 .share-tabs button.active { border-bottom-color: var(--brand); color: var(--brand); }

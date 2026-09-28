@@ -62,15 +62,11 @@ func NewStreamingClient(base *http.Client, responseHeaderTimeout time.Duration) 
 
 // NewUploadClient 创建文件上传客户端。上传默认使用 HTTP/1.1；只有驱动明确声明时才使用 HTTP/2。
 func NewUploadClient(base *http.Client, responseHeaderTimeout time.Duration, useHTTP2 bool) *http.Client {
+	client := NewStreamingClient(base, responseHeaderTimeout)
 	if useHTTP2 {
-		return NewStreamingClient(base, responseHeaderTimeout)
+		return client
 	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	if base != nil {
-		if baseTransport, ok := base.Transport.(*http.Transport); ok {
-			tr = baseTransport.Clone()
-		}
-	}
+	tr := client.Transport.(*http.Transport)
 	tr.ForceAttemptHTTP2 = false
 	tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
 	tr.Protocols = new(http.Protocols)
@@ -80,10 +76,7 @@ func NewUploadClient(base *http.Client, responseHeaderTimeout time.Duration, use
 		tr.TLSClientConfig = &tls.Config{}
 	}
 	tr.TLSClientConfig.NextProtos = []string{"http/1.1"}
-	if responseHeaderTimeout > 0 {
-		tr.ResponseHeaderTimeout = responseHeaderTimeout
-	}
-	return &http.Client{Transport: tr}
+	return client
 }
 
 func CloseClient(c *http.Client) {

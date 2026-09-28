@@ -1261,7 +1261,6 @@ homeFooterStatus.onOpenTaskPanel(openTaskPanel);
     <ShareCreateModal
       :open="shareCreateOpen"
       :account-id="currentAccountId"
-      :account-name="selectedAccountName"
       :files="shareFiles"
       :capability="shareCapability"
       @close="shareCreateOpen = false"
