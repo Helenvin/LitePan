@@ -50,7 +50,7 @@ func (s *Service) SetLogger(log *slog.Logger) {
 // 「交给播放层处理」不等于「由 LitePan 中转字节」：是否 302 取决于账号的下载模式，
 // 排查播放问题时必须能看到最终动作。只记目标 host，直链里带签名/token，不能进日志。
 // user_agent 用于分辨是哪个播放器回来取的流（直读约定下这一步是否发生是分水岭）。
-func (s *Service) logAction(action string, mode domain.DownloadMode, rawURL, ua string) {
+func (s *Service) logAction(action string, mode domain.DownloadMode, rawURL string, r *http.Request) {
 	if s == nil || s.log == nil {
 		return
 	}
@@ -62,7 +62,12 @@ func (s *Service) logAction(action string, mode domain.DownloadMode, rawURL, ua 
 	if mode == domain.DownloadRedirect {
 		modeName = "redirect"
 	}
-	s.log.Debug("播放请求交付方式", "action", action, "mode", modeName, "target_host", host, "user_agent", ua)
+	rangeHeader := r.Header.Get("Range")
+	if len(rangeHeader) > 256 {
+		rangeHeader = rangeHeader[:256] + "..."
+	}
+	s.log.Debug("播放请求交付方式", "action", action, "mode", modeName, "target_host", host,
+		"user_agent", r.UserAgent(), "method", r.Method, "range", rangeHeader)
 }
 
 func stripRedirectReferer(req *http.Request, via []*http.Request) error {
@@ -95,7 +100,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request, req Request,
 	}
 	action := PickAction(res.Mode, res.Link, intent)
 	if action == ActionRedirect {
-		s.logAction("redirect", res.Mode, res.Link.URL, ua)
+		s.logAction("redirect", res.Mode, res.Link.URL, r)
 		writeRedirect(w, r, res, intent)
 		return nil
 	}
@@ -103,7 +108,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request, req Request,
 	if name == "" {
 		name = res.File.Name
 	}
-	s.logAction("stream", res.Mode, res.Link.URL, ua)
+	s.logAction("stream", res.Mode, res.Link.URL, r)
 	return s.serveStream(w, r, req, res, name, ua, intent)
 }
 
