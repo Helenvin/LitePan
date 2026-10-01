@@ -156,7 +156,9 @@ const fileActions = useFileActions({
   removeFilesLocally: (ids) => store.removeFilesLocally(ids),
   renameFileLocally: (fileId, newName) => store.renameFileLocally(fileId, newName),
   addFolderLocally: (folder) => store.addFolderLocally(folder),
-  reloadFiles: (opts) => store.loadFiles({ ...opts, silent: true }),
+  reloadFiles: async (opts) => {
+    await store.loadFiles({ ...opts, silent: true });
+  },
 });
 
 const coverExtractEnabled = ref(false);
@@ -179,7 +181,9 @@ async function sendToCoverExtract(file: FileItem) {
 const offline = useOfflineDownloads({
   selectedAccountId: currentAccountId,
   currentParentId,
-  refreshFiles: () => store.loadFiles({ forceRefresh: true, silent: true }),
+  refreshFiles: async () => {
+    await store.loadFiles({ forceRefresh: true, silent: true });
+  },
   openDirectory: (accountId, crumbs, opts) => store.openDirectory(accountId, crumbs, opts),
 });
 const uploadApi = useUploadTasks({
@@ -195,9 +199,12 @@ const uploadApi = useUploadTasks({
   removeFilesLocally: (ids) => store.removeFilesLocally(ids),
   markDeletingFiles: (rowKeys) => fileActions.markExternalDeleteRows(rowKeys),
   clearDeletingFiles: (rowKeys) => fileActions.clearExternalDeleteRows(rowKeys),
-  refreshFiles: (force?: boolean) =>
-    store.loadFiles({ forceRefresh: Boolean(force), silent: true }),
-  loadFiles: (opts) => store.loadFiles(opts),
+  refreshFiles: async (force?: boolean) => {
+    await store.loadFiles({ forceRefresh: Boolean(force), silent: true });
+  },
+  loadFiles: async (opts) => {
+    await store.loadFiles(opts);
+  },
   openDirectory: (accountId, crumbs, opts) => store.openDirectory(accountId, crumbs, opts),
   selectAccount: (account: Account) => store.selectAccount(account.id),
   getRootId,

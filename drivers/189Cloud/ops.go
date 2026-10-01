@@ -140,7 +140,7 @@ func (d *Driver) RenameFile(ctx context.Context, fileID, newName string) error {
 	if err := uploadutil.ValidateFileName(name); err != nil {
 		return err
 	}
-	if id == d.rootID() || id == "0" || id == "/" {
+	if containsRoot([]string{id}, d.rootID()) {
 		return domain.Errorf(domain.CodeValidation, "根目录不支持重命名")
 	}
 	item, err := d.GetFileInfo(ctx, id)
@@ -257,7 +257,7 @@ func normalize189IDs(fileIDs []string) []string {
 
 func containsRoot(ids []string, root string) bool {
 	for _, id := range ids {
-		if id == root || id == "0" || id == "/" {
+		if id == root || id == "0" || id == "/" || id == syncRootID {
 			return true
 		}
 	}
