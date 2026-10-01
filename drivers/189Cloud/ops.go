@@ -18,6 +18,7 @@ import (
 const (
 	downloadPartSize    = 10 * 1024 * 1024
 	downloadConcurrency = 3
+	transferPartSize    = 32 * 1024 * 1024
 )
 
 // insecureSchemeRe 匹配明文 http 前缀，用于把下载链接升级为 https。
@@ -71,15 +72,16 @@ func (d *Driver) ResolveDownload(ctx context.Context, req driver.DownloadRequest
 		forceProxy = true
 	}
 	return &domain.DownloadInfo{
-		URL:         downloadURL,
-		Headers:     headers,
-		Mode:        mode,
-		ForceProxy:  forceProxy,
-		Expiration:  downloadURLTTLSeconds * time.Second,
-		Size:        size,
-		FileName:    fileName,
-		ChunkSize:   downloadPartSize,
-		Concurrency: downloadConcurrency,
+		URL:               downloadURL,
+		Headers:           headers,
+		Mode:              mode,
+		ForceProxy:        forceProxy,
+		Expiration:        downloadURLTTLSeconds * time.Second,
+		Size:              size,
+		FileName:          fileName,
+		ChunkSize:         downloadPartSize,
+		Concurrency:       downloadConcurrency,
+		TransferChunkSize: transferPartSize,
 	}, nil
 }
 

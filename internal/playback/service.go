@@ -13,13 +13,14 @@ import (
 )
 
 type Service struct {
-	exec        *driverexec.Executor
-	cache       *cache.Service
-	clientHTTP1 *http.Client
-	clientH2    *http.Client
-	rangeLimits accountRangeLimiter
-	resolveHook DownloadResolverHook
-	log         *slog.Logger
+	exec           *driverexec.Executor
+	cache          *cache.Service
+	clientHTTP1    *http.Client
+	clientH2       *http.Client
+	rangeLimits    accountRangeLimiter
+	transferLimits accountRangeLimiter
+	resolveHook    DownloadResolverHook
+	log            *slog.Logger
 }
 
 // DownloadResolverHook 允许外部插件在驱动解析前接管下载直链。
