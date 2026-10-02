@@ -139,8 +139,7 @@ func TestCloud189RefreshResponseAndCooldown(t *testing.T) {
 	}
 }
 
-// 会话初始化失败时只对"认证失效"回退换 Token；网络/上游错误（503 等）必须
-// 直接上报，不得多换一次 Token、不得追加一次会话请求（约定：非认证错误不触发认证刷新）。
+// 会话初始化仅在认证失效时刷新 Token，网络及服务端错误直接返回。
 func TestCloud189InitSessionFailureTriggersTokenRefreshOnlyOnAuthExpiry(t *testing.T) {
 	for _, tc := range []struct {
 		name          string

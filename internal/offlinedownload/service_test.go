@@ -188,7 +188,11 @@ func TestNativePollWakesForNewTaskAndStopsInFlightRequest(t *testing.T) {
 	}}
 	svc := New(Options{Exec: driverexec.New(offlineTestProvider{drv: drv}, nil), DataDir: t.TempDir()})
 	svc.Start(context.Background())
-	defer svc.Stop(context.Background())
+	defer func() {
+		if err := svc.Stop(context.Background()); err != nil {
+			t.Errorf("停止离线下载服务失败: %v", err)
+		}
+	}()
 	svc.putTask(&Task{TaskID: "new", AccountID: 7, InfoHash: "new", Status: driver.OfflineStatusPending})
 	select {
 	case <-entered:

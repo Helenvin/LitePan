@@ -44,9 +44,6 @@ var config = driver.Config{
 	TokenLifetime:          7200 * time.Second,
 	RefreshAdvance:         15 * time.Minute,
 	ProvideHashes:          []string{"md5"},
-	// 光鸭已取消「按 md5 接收秒传」的接口，这里不再声明 RapidUploadHashes；
-	// 若官方恢复该接口，取消下面这行的注释即可。
-	// RapidUploadHashes:      []string{"md5"},
 	UploadConflictPolicies: []string{"rename"},
 	SupportsAccountProfile: true,
 }

@@ -9,11 +9,9 @@ import (
 	"time"
 )
 
-// transferCheckpointInterval 是跨盘下载过程中连续断点的后台落盘间隔。
 const transferCheckpointInterval = 10 * time.Second
 
-// 并发 WriteAt 会产生空洞，不能用文件长度恢复。仅记录已同步到磁盘的连续前缀，
-// 无需持久化每个分片；异常退出后丢弃未归并的尾部即可。
+// 并发 WriteAt 会产生空洞，恢复时只信任已落盘的连续断点。
 func crossTransferResumeOffset(path string) (int64, error) {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -60,9 +58,7 @@ func saveCrossTransferCheckpoint(file *os.File, offset int64) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-// transferCheckpoint 在后台按固定间隔把连续断点落盘。
-// 落盘包含 fsync，放在下载数据流之外，避免每隔一段时间让所有分片一起等磁盘。
-// 后台落盘失败不影响正确性：结束时会再落一次，失败时保留的旧断点只是让恢复更靠前。
+// transferCheckpoint 异步落盘连续断点，避免 fsync 阻塞下载；失败时沿用旧断点。
 type transferCheckpoint struct {
 	file    *os.File
 	stopCh  chan struct{}
@@ -88,7 +84,6 @@ func newTransferCheckpointEvery(file *os.File, offset int64, interval time.Durat
 	return c
 }
 
-// update 记录最新的连续断点；只前进不后退。
 func (c *transferCheckpoint) update(offset int64) {
 	c.mu.Lock()
 	if offset > c.offset {

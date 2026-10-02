@@ -75,7 +75,7 @@ const workspaceFields = computed<ProxyField[]>(() => [
     label: "删除保护阈值（个媒体文件）",
     inputmode: "numeric",
     helpTitle: "删除保护阈值说明",
-    helpBody: "目录内媒体文件超过该数量时，不会自动删除。",
+    helpBody: "同一任务在归并窗口内删除的媒体文件累计超过该数量时，整批不会自动删除，不按单个目录分别放行。",
   },
   {
     key: "strategy",
@@ -86,7 +86,7 @@ const workspaceFields = computed<ProxyField[]>(() => [
       { value: "confirm", label: "等待确认" },
     ],
     helpTitle: "超限处理说明",
-    helpBody: "等待确认：写入通知中心，管理员确认后再删。<br>直接拦截：不删远端文件，只发提醒。",
+    helpBody: "等待确认：整批写入通知中心，管理员确认后再删。<br>直接拦截：整批不删远端文件，只发提醒。",
   },
   {
     key: "delay_mode",
@@ -346,7 +346,7 @@ onMounted(load);
           <div v-for="item in pendingForTask" :key="item.id" class="pending-row">
             <span class="pending-row__tx">
               <b>{{ item.relative_path }}</b>
-              <small>媒体文件数量已超过保护阈值</small>
+              <small>本批媒体文件总量已超过保护阈值</small>
             </span>
             <span class="pending-row__ops">
               <AppButton size="sm" variant="secondary" :disabled="busyID === item.id" @click="actPending(item.id, 'cancel')">取消</AppButton>

@@ -48,8 +48,7 @@ func (p *Planner) detectSameWorkDirConflicts() {
 				if fa.SourceParentID != losingDirID {
 					continue
 				}
-				// 文件原本指向失败作品目录下的 Season xx 等新建子目录时，
-				// 应把该子目录整体改挂到胜出作品目录，不能把文件直接扔到作品根。
+				// 合并作品时保留原目标中的季目录层级。
 				if !p.reparentMergedTargetRef(fa.TargetParentID, losingDirID, winningDirID, winning.ID) {
 					fa.TargetParentID = winningDirID
 					if !contains(fa.DependsOn, winning.ID) {
@@ -128,8 +127,7 @@ func (p *Planner) detectSameWorkDirConflicts() {
 	}
 }
 
-// reparentMergedTargetRef 保留文件原目标中的季目录等层级，只将引用链根部
-// 从失败作品目录改挂到胜出目录。返回 true 表示该引用已完成或早已完成重定向。
+// reparentMergedTargetRef 保留子目录层级，将引用链改挂到胜出作品目录。
 func (p *Planner) reparentMergedTargetRef(targetRef, losingDirID, winningDirID, winningActionID string) bool {
 	if !strings.HasPrefix(targetRef, "ref:") {
 		return false

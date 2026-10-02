@@ -29,7 +29,7 @@ const (
 	StrategyConfirm = "confirm"
 )
 
-// TaskConfig 是单个 STRM 任务的删除联动设置：一个任务一份，互不影响。
+// TaskConfig 是单个 STRM 任务的删除监控设置。
 type TaskConfig struct {
 	TaskID       int64  `json:"task_id"`
 	Threshold    int    `json:"threshold"`
@@ -49,14 +49,25 @@ type TaskOption struct {
 }
 
 type Pending struct {
-	ID        int64     `json:"id"`
-	TaskID    int64     `json:"task_id"`
-	TaskName  string    `json:"task_name"`
-	AccountID int64     `json:"account_id"`
-	Relative  string    `json:"relative_path"`
-	RemoteID  string    `json:"remote_id"`
-	ParentID  string    `json:"parent_id"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        int64          `json:"id"`
+	TaskID    int64          `json:"task_id"`
+	TaskName  string         `json:"task_name"`
+	AccountID int64          `json:"account_id"`
+	Relative  string         `json:"relative_path"`
+	Targets   []deleteTarget `json:"targets"`
+	CreatedAt time.Time      `json:"created_at"`
+}
+
+type deleteTarget struct {
+	Relative string `json:"relative_path"`
+	RemoteID string `json:"remote_id"`
+	ParentID string `json:"parent_id"`
+	IsDir    bool   `json:"is_dir"`
+}
+
+type fileOperations interface {
+	List(context.Context, int64, string, bool) ([]domain.FileItem, error)
+	DeleteFiles(context.Context, int64, []string, string) error
 }
 
 type Status struct {
@@ -76,8 +87,9 @@ type Options struct {
 }
 
 type watchDir struct {
-	taskID int64
-	root   string
+	taskID   int64
+	root     string
+	identity os.FileInfo
 }
 
 type candidate struct {
@@ -95,21 +107,26 @@ type candidateBatch struct {
 type Service struct {
 	configs domain.ConfigRepository
 	tasks   domain.StrmTaskRepository
-	files   *file.Service
+	files   fileOperations
 	strm    *strm.Service
 	strmDir string
 	bus     *eventbus.Bus
 	log     *slog.Logger
 
-	mu      sync.Mutex
-	config  Config
-	pending []Pending
-	watcher *fsnotify.Watcher
-	watched map[string]watchDir
-	batches map[int64]*candidateBatch
-	// warnedRoots 记录「已经告警过无法监听」的任务根目录，避免每分钟重复刷日志
+	mu          sync.Mutex
+	config      Config
+	pending     []Pending
+	watcher     *fsnotify.Watcher
+	watched     map[string]watchDir
+	roots       map[int64]string
+	batches     map[int64]*candidateBatch
+	generation  uint64
+	revision    uint64
 	warnedRoots map[int64]string
-	cancel      context.CancelFunc
+	started     bool
+	paused      bool
+	resume      chan struct{}
+	refresh     chan struct{}
 }
 
 func New(opts Options) *Service {
@@ -117,18 +134,25 @@ func New(opts Options) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
+	var files fileOperations
+	if opts.Files != nil {
+		files = opts.Files
+	}
 	return &Service{
 		configs:     opts.Configs,
 		tasks:       opts.Tasks,
-		files:       opts.Files,
+		files:       files,
 		strm:        opts.Strm,
 		strmDir:     opts.StrmDir,
 		bus:         opts.Bus,
 		log:         log,
 		config:      defaultConfig(),
 		watched:     make(map[string]watchDir),
+		roots:       make(map[int64]string),
 		batches:     make(map[int64]*candidateBatch),
 		warnedRoots: make(map[int64]string),
+		resume:      make(chan struct{}, 1),
+		refresh:     make(chan struct{}, 1),
 	}
 }
 
@@ -167,7 +191,6 @@ func normalizeConfig(cfg Config) (Config, error) {
 }
 
 func normalizeTaskConfig(item TaskConfig) (TaskConfig, error) {
-	// 没填的字段按默认值补齐，前端漏传也不会把保护参数打成 0
 	if item.Threshold == 0 {
 		item.Threshold = defaultThreshold
 	}
@@ -186,7 +209,6 @@ func normalizeTaskConfig(item TaskConfig) (TaskConfig, error) {
 	return item, nil
 }
 
-// taskConfig 取某个任务当前的设置；没配置过的任务返回 false。
 func (s *Service) taskConfig(taskID int64) (TaskConfig, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -202,19 +224,17 @@ func (s *Service) Start(ctx context.Context) {
 	if s == nil || s.configs == nil || s.tasks == nil || s.files == nil || s.strm == nil {
 		return
 	}
-	runCtx, cancel := context.WithCancel(ctx)
 	s.mu.Lock()
-	if s.cancel != nil {
+	if s.started {
 		s.mu.Unlock()
-		cancel()
 		return
 	}
-	s.cancel = cancel
+	s.started = true
 	s.mu.Unlock()
-	if err := s.load(runCtx); err != nil {
+	if err := s.load(ctx); err != nil {
 		s.log.Warn("加载 STRM 删除联动配置失败", "err", err)
 	}
-	go safego.Guard(s.log, "strm-delete.watch", func() { s.run(runCtx) })
+	go safego.Guard(s.log, "strm-delete.watch", func() { s.run(ctx) })
 }
 
 func (s *Service) load(ctx context.Context) error {
@@ -249,41 +269,103 @@ func (s *Service) load(ctx context.Context) error {
 }
 
 func (s *Service) run(ctx context.Context) {
+	for ctx.Err() == nil {
+		_ = s.watch(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.resume:
+		}
+	}
+}
+
+func (s *Service) watch(ctx context.Context) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		s.log.Error("启动 STRM 删除监听失败", "err", err)
-		return
+		s.pauseWatch(ctx, err)
+		return err
 	}
 	defer watcher.Close()
 	s.mu.Lock()
 	s.watcher = watcher
 	s.mu.Unlock()
-	s.reconcile(ctx)
+	return s.watchEvents(ctx, watcher.Events, watcher.Errors)
+}
+
+func (s *Service) pauseWatch(ctx context.Context, err error) {
+	s.mu.Lock()
+	for id, batch := range s.batches {
+		if batch.timer != nil {
+			batch.timer.Stop()
+		}
+		delete(s.batches, id)
+	}
+	s.watcher = nil
+	s.watched = make(map[string]watchDir)
+	s.roots = make(map[int64]string)
+	s.paused = true
+	s.mu.Unlock()
+	if ctx.Err() == nil {
+		s.log.Warn("STRM 删除监听异常，已暂停自动删除并取消本轮任务", "err", err)
+		s.notify(ctx, "warning", "STRM 删除监控已暂停", "监听发生异常，已取消尚未执行的自动删除。请重新保存并启用监控设置恢复监听；异常期间的删除不会补执行。", 0, 0)
+	}
+}
+
+func (s *Service) watchEvents(ctx context.Context, events <-chan fsnotify.Event, errs <-chan error) (err error) {
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer func() {
+		// timer.Stop 不会等待已经启动的回调，因此同时取消本轮上下文。
+		cancel()
+		s.pauseWatch(ctx, err)
+	}()
+	s.mu.Lock()
+	s.paused = false
+	s.mu.Unlock()
+	if err := s.reconcile(watchCtx); err != nil {
+		return err
+	}
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		case <-ticker.C:
-			s.reconcile(ctx)
-		case err := <-watcher.Errors:
-			if err != nil {
-				s.log.Warn("STRM 删除监听异常，本轮不执行远端删除", "err", err)
+			if err := s.reconcile(watchCtx); err != nil {
+				return err
 			}
-		case evt := <-watcher.Events:
-			s.handleEvent(ctx, evt)
+		case <-s.refresh:
+			if err := s.reconcile(watchCtx); err != nil {
+				return err
+			}
+		case err, ok := <-errs:
+			if !ok {
+				return fmt.Errorf("文件监听错误通道已关闭")
+			}
+			if err != nil {
+				return err
+			}
+		case evt, ok := <-events:
+			if !ok {
+				return fmt.Errorf("文件监听事件通道已关闭")
+			}
+			if err := s.handleEvent(watchCtx, evt); err != nil {
+				return err
+			}
 		}
 	}
 }
 
-func (s *Service) selectedTasks(ctx context.Context) map[int64]*domain.StrmTask {
+func (s *Service) selectedTasks(ctx context.Context) (map[int64]*domain.StrmTask, error) {
 	s.mu.Lock()
 	cfg := s.config
 	s.mu.Unlock()
 	out := make(map[int64]*domain.StrmTask)
 	if !cfg.Enabled {
-		return out
+		return out, nil
 	}
 	selected := make(map[int64]struct{}, len(cfg.Items))
 	for _, item := range cfg.Items {
@@ -291,19 +373,21 @@ func (s *Service) selectedTasks(ctx context.Context) map[int64]*domain.StrmTask 
 	}
 	tasks, err := s.tasks.List(ctx)
 	if err != nil {
-		s.log.Warn("读取 STRM 删除监听任务失败", "err", err)
-		return out
+		return nil, err
 	}
 	for _, task := range tasks {
 		if _, ok := selected[task.ID]; ok {
 			out[task.ID] = task
 		}
 	}
-	return out
+	return out, nil
 }
 
-func (s *Service) reconcile(ctx context.Context) {
-	tasks := s.selectedTasks(ctx)
+func (s *Service) reconcile(ctx context.Context) error {
+	tasks, err := s.selectedTasks(ctx)
+	if err != nil {
+		return err
+	}
 	desiredRoots := make(map[int64]string, len(tasks))
 	for id, task := range tasks {
 		desiredRoots[id] = filepath.Clean(strm.TaskOutputDir(s.strmDir, strm.TaskRelDir(task.GroupDir, task.OutputFolder)))
@@ -312,22 +396,61 @@ func (s *Service) reconcile(ctx context.Context) {
 	watcher := s.watcher
 	if watcher == nil {
 		s.mu.Unlock()
-		return
+		return nil
 	}
-	for path, info := range s.watched {
-		if root, ok := desiredRoots[info.taskID]; !ok || root != info.root {
-			_ = watcher.Remove(path)
-			delete(s.watched, path)
+	var staleRoots []string
+	for id, previous := range s.roots {
+		if root, ok := desiredRoots[id]; !ok || root != previous {
+			staleRoots = append(staleRoots, previous)
 		}
 	}
 	s.mu.Unlock()
+	for _, root := range staleRoots {
+		s.removeTree(root)
+	}
 	for id, root := range desiredRoots {
-		if st, err := os.Stat(root); err != nil || !st.IsDir() {
+		st, err := os.Stat(root)
+		if err != nil || !st.IsDir() {
+			s.removeTree(root)
 			s.warnUnwatchableRoot(id, root, err)
 			continue
 		}
-		s.clearUnwatchableRoot(id)
-		s.addTree(id, root, root)
+		s.mu.Lock()
+		delete(s.warnedRoots, id)
+		info, watched := s.watched[root]
+		s.mu.Unlock()
+		if watched && info.taskID == id && info.identity != nil && os.SameFile(info.identity, st) {
+			continue
+		}
+		s.removeTree(root)
+		if err := s.addTree(ctx, id, root, root); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) removeTree(root string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for path, info := range s.watched {
+		if !pathContains(root, path) {
+			continue
+		}
+		if s.watcher != nil {
+			_ = s.watcher.Remove(path)
+		}
+		delete(s.watched, path)
+		if path == info.root {
+			s.revision++
+			delete(s.roots, info.taskID)
+			if batch := s.batches[info.taskID]; batch != nil {
+				if batch.timer != nil {
+					batch.timer.Stop()
+				}
+				delete(s.batches, info.taskID)
+			}
+		}
 	}
 }
 
@@ -351,32 +474,50 @@ func (s *Service) warnUnwatchableRoot(taskID int64, root string, err error) {
 		"task_id", taskID, "dir", root, "reason", reason)
 }
 
-func (s *Service) clearUnwatchableRoot(taskID int64) {
-	s.mu.Lock()
-	delete(s.warnedRoots, taskID)
-	s.mu.Unlock()
-}
-
-func (s *Service) addTree(taskID int64, root, start string) {
-	_ = filepath.WalkDir(start, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || !entry.IsDir() {
+func (s *Service) addTree(ctx context.Context, taskID int64, root, start string) error {
+	return filepath.WalkDir(start, func(path string, entry os.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if os.IsNotExist(err) {
 			return nil
 		}
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		var identity os.FileInfo
+		if path == root {
+			identity, err = entry.Info()
+			if err != nil {
+				if os.IsNotExist(err) {
+					return nil
+				}
+				return err
+			}
+		}
 		s.mu.Lock()
+		defer s.mu.Unlock()
 		_, exists := s.watched[path]
 		if !exists && s.watcher != nil {
 			if addErr := s.watcher.Add(path); addErr == nil {
-				s.watched[path] = watchDir{taskID: taskID, root: root}
+				s.watched[path] = watchDir{taskID: taskID, root: root, identity: identity}
+				if path == root {
+					s.roots[taskID] = root
+				}
+			} else if os.IsNotExist(addErr) {
+				return nil
 			} else {
-				s.log.Warn("监听 STRM 目录失败", "path", path, "err", addErr)
+				return fmt.Errorf("监听 STRM 目录 %s 失败: %w", path, addErr)
 			}
 		}
-		s.mu.Unlock()
 		return nil
 	})
 }
 
-func (s *Service) handleEvent(ctx context.Context, evt fsnotify.Event) {
+func (s *Service) handleEvent(ctx context.Context, evt fsnotify.Event) error {
 	s.mu.Lock()
 	info, knownDir := s.watched[evt.Name]
 	if !knownDir {
@@ -384,36 +525,38 @@ func (s *Service) handleEvent(ctx context.Context, evt fsnotify.Event) {
 	}
 	s.mu.Unlock()
 	if info.taskID == 0 {
-		return
+		return nil
 	}
 	s.log.Debug("STRM 删除监听收到文件事件", "task_id", info.taskID, "op", evt.Op.String(), "path", evt.Name)
 	if evt.Op&fsnotify.Create != 0 {
 		if st, err := os.Stat(evt.Name); err == nil && st.IsDir() {
-			s.addTree(info.taskID, info.root, evt.Name)
+			return s.addTree(ctx, info.taskID, info.root, evt.Name)
 		}
-		return
+		return nil
 	}
-	if evt.Op&(fsnotify.Remove|fsnotify.Rename) == 0 || evt.Name == info.root {
-		return
+	if evt.Op&(fsnotify.Remove|fsnotify.Rename) == 0 {
+		return nil
+	}
+	if evt.Name == info.root {
+		s.removeTree(info.root)
+		return nil
 	}
 	if s.strm.IsTaskBusy(info.taskID) {
-		return
+		// 程序自身搬移也必须移除失效的监听，但不产生删除候选。
+		if knownDir {
+			s.removeTree(evt.Name)
+		}
+		return nil
 	}
 	isDir := knownDir
 	if !isDir && !strings.EqualFold(filepath.Ext(evt.Name), ".strm") {
-		return
+		return nil
 	}
 	if knownDir {
-		s.mu.Lock()
-		for path := range s.watched {
-			if path == evt.Name || strings.HasPrefix(path, evt.Name+string(filepath.Separator)) {
-				_ = s.watcher.Remove(path)
-				delete(s.watched, path)
-			}
-		}
-		s.mu.Unlock()
+		s.removeTree(evt.Name)
 	}
 	s.queue(ctx, candidate{taskID: info.taskID, path: evt.Name, isDir: isDir})
+	return nil
 }
 
 func (s *Service) queue(ctx context.Context, c candidate) {
@@ -421,7 +564,7 @@ func (s *Service) queue(ctx context.Context, c candidate) {
 	s.mu.Lock()
 	var item TaskConfig
 	found := false
-	if s.config.Enabled {
+	if s.config.Enabled && !s.paused && ctx.Err() == nil {
 		for _, configured := range s.config.Items {
 			if configured.TaskID == c.taskID {
 				item = configured
@@ -440,7 +583,8 @@ func (s *Service) queue(ctx context.Context, c candidate) {
 		s.batches[c.taskID] = batch
 	}
 	mergeCandidate(batch.items, c)
-	batch.generation++
+	s.generation++
+	batch.generation = s.generation
 	generation := batch.generation
 	if batch.timer != nil {
 		batch.timer.Stop()
@@ -477,167 +621,6 @@ func mergeCandidate(items map[string]candidate, incoming candidate) {
 
 func pathContains(parent, child string) bool {
 	return child == parent || strings.HasPrefix(child, parent+string(filepath.Separator))
-}
-
-func (s *Service) processBatch(ctx context.Context, taskID int64, generation uint64) {
-	s.mu.Lock()
-	batch := s.batches[taskID]
-	if batch == nil || batch.generation != generation {
-		s.mu.Unlock()
-		return
-	}
-	delete(s.batches, taskID)
-	items := make([]candidate, 0, len(batch.items))
-	for _, item := range batch.items {
-		items = append(items, item)
-	}
-	s.mu.Unlock()
-	sort.Slice(items, func(i, j int) bool { return items[i].path < items[j].path })
-	for _, item := range items {
-		if ctx.Err() != nil {
-			return
-		}
-		s.process(ctx, item)
-	}
-}
-
-func (s *Service) process(ctx context.Context, c candidate) {
-	if _, err := os.Stat(c.path); err == nil || !os.IsNotExist(err) || s.strm.IsTaskBusy(c.taskID) {
-		return
-	}
-	s.mu.Lock()
-	enabled := s.config.Enabled
-	s.mu.Unlock()
-	if !enabled {
-		return
-	}
-	cfg, ok := s.taskConfig(c.taskID)
-	if !ok {
-		return
-	}
-	task, err := s.tasks.Get(ctx, c.taskID)
-	if err != nil {
-		return
-	}
-	root := filepath.Clean(strm.TaskOutputDir(s.strmDir, strm.TaskRelDir(task.GroupDir, task.OutputFolder)))
-	rel, err := filepath.Rel(root, c.path)
-	if err != nil || rel == "." || rel == "" || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return
-	}
-	rel = filepath.ToSlash(rel)
-	target, parentID, err := s.resolveTarget(ctx, task, rel, c.isDir)
-	if err != nil {
-		s.log.Warn("STRM 删除联动未找到唯一远端目标，已跳过", "task_id", task.ID, "path", rel, "err", err)
-		return
-	}
-	count := 1
-	if c.isDir {
-		count, err = s.countMedia(ctx, task, target.ID, cfg.Threshold)
-		if err != nil {
-			s.log.Warn("STRM 删除联动统计失败，已跳过远端删除", "task_id", task.ID, "path", rel, "err", err)
-			return
-		}
-	}
-	if count > cfg.Threshold {
-		if cfg.Strategy == StrategyConfirm {
-			s.addPending(ctx, task, rel, target.ID, parentID, cfg.Threshold)
-		} else {
-			s.notify(ctx, "warning", "STRM 删除已拦截", fmt.Sprintf("%s 的媒体文件数量已超过保护阈值 %d，未删除网盘源文件。", rel, cfg.Threshold), task.AccountID, 0)
-		}
-		return
-	}
-	if err := s.files.DeleteFiles(ctx, task.AccountID, []string{target.ID}, parentID); err != nil {
-		s.log.Warn("STRM 删除联动执行失败", "task_id", task.ID, "path", rel, "err", err)
-		return
-	}
-	s.log.Info("STRM 删除已联动远端", "task_id", task.ID, "path", rel, "media_count", count)
-}
-
-func (s *Service) resolveTarget(ctx context.Context, task *domain.StrmTask, rel string, isDir bool) (*domain.FileItem, string, error) {
-	parts := strings.Split(strings.Trim(rel, "/"), "/")
-	parentID := task.ParentID
-	for i, name := range parts {
-		items, err := s.files.List(ctx, task.AccountID, parentID, true)
-		if err != nil {
-			return nil, "", err
-		}
-		last := i == len(parts)-1
-		var matches []domain.FileItem
-		for _, item := range items {
-			matched := targetNameMatches(item, name, last, isDir)
-			if matched && (!last || item.IsDir == isDir) {
-				matches = append(matches, item)
-			}
-		}
-		if len(matches) != 1 {
-			return nil, "", domain.Errorf(domain.CodeNotFound, "路径不存在或不唯一：%s", strings.Join(parts[:i+1], "/"))
-		}
-		if last {
-			item := matches[0]
-			return &item, parentID, nil
-		}
-		parentID = matches[0].ID
-	}
-	return nil, "", domain.Errorf(domain.CodeNotFound, "远端目标不存在")
-}
-
-func targetNameMatches(item domain.FileItem, localName string, last, targetIsDir bool) bool {
-	if last && item.IsDir != targetIsDir {
-		return false
-	}
-	if last && !targetIsDir {
-		localStem := strings.TrimSuffix(localName, ".strm")
-		remoteStem := strings.TrimSuffix(item.Name, filepath.Ext(item.Name))
-		return strings.EqualFold(remoteStem, localStem) || strings.EqualFold(strm.SafeStem(remoteStem), localStem)
-	}
-	return item.Name == localName || strm.SafeName(item.Name) == localName
-}
-
-func (s *Service) countMedia(ctx context.Context, task *domain.StrmTask, rootID string, limit int) (int, error) {
-	queue := []string{rootID}
-	count := 0
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
-		items, err := s.files.List(ctx, task.AccountID, id, true)
-		if err != nil {
-			return 0, err
-		}
-		for _, item := range items {
-			if item.IsDir {
-				queue = append(queue, item.ID)
-				continue
-			}
-			if s.strm.IsTaskMediaFile(task, item.Name) {
-				count++
-				if count > limit {
-					return count, nil
-				}
-			}
-		}
-	}
-	return count, nil
-}
-
-func (s *Service) addPending(ctx context.Context, task *domain.StrmTask, rel, remoteID, parentID string, threshold int) {
-	s.mu.Lock()
-	for _, item := range s.pending {
-		if item.TaskID == task.ID && item.Relative == rel {
-			s.mu.Unlock()
-			return
-		}
-	}
-	id := time.Now().UnixMilli()
-	for _, existing := range s.pending {
-		if existing.ID >= id {
-			id = existing.ID + 1
-		}
-	}
-	item := Pending{ID: id, TaskID: task.ID, TaskName: task.Name, AccountID: task.AccountID, Relative: rel, RemoteID: remoteID, ParentID: parentID, CreatedAt: time.Now()}
-	s.pending = append(s.pending, item)
-	_ = s.savePendingLocked(ctx)
-	s.mu.Unlock()
-	s.notify(ctx, "warning", "STRM 删除等待确认", fmt.Sprintf("%s 的媒体文件数量已超过保护阈值 %d。请确认是否删除网盘源文件。", rel, threshold), task.AccountID, id)
 }
 
 func (s *Service) notify(ctx context.Context, level, title, message string, accountID, refID int64) {
@@ -684,6 +667,7 @@ func (s *Service) UpdateConfig(ctx context.Context, cfg Config) (Status, error) 
 	}
 	s.mu.Lock()
 	s.config = norm
+	s.revision++
 	selected := make(map[int64]struct{}, len(norm.Items))
 	for _, item := range norm.Items {
 		selected[item.TaskID] = struct{}{}
@@ -696,41 +680,18 @@ func (s *Service) UpdateConfig(ctx context.Context, cfg Config) (Status, error) 
 			delete(s.batches, taskID)
 		}
 	}
-	s.mu.Unlock()
-	s.reconcile(ctx)
-	return s.Status(ctx)
-}
-
-func (s *Service) Confirm(ctx context.Context, id int64) error {
-	s.mu.Lock()
-	var item *Pending
-	for i := range s.pending {
-		if s.pending[i].ID == id {
-			copy := s.pending[i]
-			item = &copy
-			break
+	if s.paused && norm.Enabled {
+		select {
+		case s.resume <- struct{}{}:
+		default:
 		}
 	}
 	s.mu.Unlock()
-	if item == nil {
-		return domain.Errorf(domain.CodeNotFound, "待确认删除记录不存在")
+	select {
+	case s.refresh <- struct{}{}:
+	default:
 	}
-	task, err := s.tasks.Get(ctx, item.TaskID)
-	if err != nil {
-		return err
-	}
-	local := strm.TaskOutputDir(s.strmDir, filepath.FromSlash(filepath.Join(strm.TaskRelDir(task.GroupDir, task.OutputFolder), item.Relative)))
-	if _, err := os.Stat(local); err == nil || !os.IsNotExist(err) {
-		return domain.Errorf(domain.CodeValidation, "本地路径已经恢复，已停止删除")
-	}
-	target, parentID, err := s.resolveTarget(ctx, task, item.Relative, true)
-	if err != nil || target.ID != item.RemoteID || parentID != item.ParentID {
-		return domain.Errorf(domain.CodeValidation, "远端路径已变化，请取消后重新触发")
-	}
-	if err := s.files.DeleteFiles(ctx, item.AccountID, []string{item.RemoteID}, item.ParentID); err != nil {
-		return err
-	}
-	return s.removePending(ctx, id)
+	return s.Status(ctx)
 }
 
 func (s *Service) Cancel(ctx context.Context, id int64) error { return s.removePending(ctx, id) }
