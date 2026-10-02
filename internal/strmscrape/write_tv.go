@@ -38,6 +38,10 @@ type tmdbImageDownloader interface {
 
 // writeOptionalArtwork 将图片下载故障降为警告，但保留取消和本地写入错误。
 func (s *Service) writeOptionalArtwork(ctx context.Context, client tmdbImageDownloader, imagePath, size, outputPath, label string) (bool, error) {
+	imagePath = strings.TrimSpace(imagePath)
+	if imagePath == "" {
+		return false, nil
+	}
 	data, err := client.DownloadImage(ctx, imagePath, size)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -47,7 +51,7 @@ func (s *Service) writeOptionalArtwork(ctx context.Context, client tmdbImageDown
 			s.log.Warn("STRM 刮削可选图片下载失败，已跳过",
 				"artwork", label,
 				"output", outputPath,
-				"error", err,
+				"error", err.Error(),
 			)
 		}
 		return false, nil
