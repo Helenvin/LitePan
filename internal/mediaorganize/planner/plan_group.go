@@ -280,6 +280,8 @@ func (p *Planner) planGroupWithMatch(
 					currentSeason = season
 				}
 			}
+		} else {
+			currentSeason, currentEpisode = nil, nil
 		}
 
 		var seasonDirRename *moplan.PlanAction

@@ -13,6 +13,45 @@ import (
 
 type fallbackTMDBStub int
 
+func TestPlanMovieDoesNotUseEpisodeNumbers(t *testing.T) {
+	for _, mode := range []string{"rename", "move"} {
+		for _, kind := range []string{"movie", "tv"} {
+			t.Run(mode+"/"+kind, func(t *testing.T) {
+				p := New(context.Background(), nil, 1, TaskConfig{
+					TargetDirectoryID: "root", TargetRootID: "target", ActionType: mode, RenameMarker: "tmdb",
+				}, nil, "task", nil, nil, nil, nil)
+				key := groupKey{mediaKind: kind, dirID: "work", dirName: "钢铁侠3", title: "钢铁侠3"}
+				key.setSeason(intPtr(1))
+				key.setEpisode(intPtr(3))
+				entry := batchEntry{
+					item: domain.FileItem{ID: "file", Name: "Iron.Man.3.mkv"}, sourceDirID: "work",
+					fileParsed: rules.ParsedMedia{Title: "Iron Man", Season: intPtr(1), Episode: intPtr(3)},
+				}
+				match := tmdbMatchResult{tmdbID: "68721", title: "钢铁侠3", tmdbTitle: "钢铁侠3", year: intPtr(2013)}
+				if err := p.planGroupWithMatch(key, []batchEntry{entry}, nil, &match, false); err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, action := range p.actions {
+					if action.SourceID != "file" {
+						continue
+					}
+					found = true
+					if got := strings.Contains(action.TargetName, "S01E03"); got != (kind == "tv") {
+						t.Fatalf("媒体类型 %s 的季集命名错误: %q", kind, action.TargetName)
+					}
+					if kind == "movie" && (rules.AsFirstInt(action.Metadata["season"]) != nil || rules.AsFirstInt(action.Metadata["episode"]) != nil) {
+						t.Fatalf("电影动作不应残留季集信息: %+v", action.Metadata)
+					}
+				}
+				if !found {
+					t.Fatalf("没有生成文件整理动作: %+v", p.actions)
+				}
+			})
+		}
+	}
+}
+
 func (*fallbackTMDBStub) ValidateConnection(context.Context) bool { return true }
 
 func (s *fallbackTMDBStub) Search(context.Context, string, *int, string) ([]json.RawMessage, error) {
